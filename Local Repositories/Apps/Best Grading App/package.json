@@ -1,0 +1,15 @@
+{
+  "name": "best-grading-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BEST Classroom Grader static app",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}

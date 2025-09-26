@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BEST Classroom Grader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1><img src="Files to use/BEST_logo_small.jpg" alt="" class="logo-img"> <span class="title-text">Classroom Grading</span></h1>
+  </header>
+  <main class="layout">
+    <section class="panel add-student-panel">
+      <h2>Add Student</h2>
+      <form id="addStudentForm" class="flex-row gap-sm" style="flex-wrap:wrap; align-items:center" autocomplete="off">
+        <input type="date" id="gradeDate" aria-label="School Day" title="School Day" />
+        <input type="text" id="studentName" placeholder="Student name" required />
+        <button type="submit" class="btn primary">Add</button>
+        <button type="button" id="addDetailedStudentBtn" class="btn outline" title="Add Student with Details">Add Detailed</button>
+        <button type="button" id="saveGradesBtn" class="btn outline" title="Save Grades">Save Grades</button>
+        <button type="button" id="printReportBtn" class="btn outline" title="Print Report">Print Report</button>
+      </form>
+    </section>
+
+    <section class="panel data-management-panel">
+      <h2>Data Management</h2>
+      <div class="flex-row gap-sm" style="flex-wrap:wrap; align-items:center">
+        <button type="button" id="exportDataBtn" class="btn outline" title="Export All Data">Export JSON</button>
+        <button type="button" id="exportCSVBtn" class="btn outline" title="Export CSV">Export CSV</button>
+        <label for="importDataFile" class="btn outline" style="cursor: pointer;" title="Import Data">Import Data</label>
+        <input type="file" id="importDataFile" accept=".json" style="display: none;" />
+        <button type="button" id="viewStatsBtn" class="btn outline" title="View Statistics">Statistics</button>
+        <button type="button" id="manageStudentsBtn" class="btn outline" title="Manage Students">Manage Students</button>
+      </div>
+    </section>
+
+    <!-- Tab Navigation -->
+    <section class="panel tab-navigation-panel">
+      <h2>View Mode</h2>
+      <div class="tab-buttons">
+        <button type="button" id="dailyViewBtn" class="btn tab-btn active" data-tab="daily">Daily Grades</button>
+        <button type="button" id="cumulativeViewBtn" class="btn tab-btn" data-tab="cumulative">Cumulative Summary</button>
+      </div>
+    </section>
+
+    <!-- Daily View Container -->
+    <div id="dailyView" class="view-container">
+      <section class="panel" id="assignmentSection">
+        <h2>Assignments (Out of 10)</h2>
+        <div id="assignmentTableContainer" class="table-wrapper"></div>
+      </section>
+
+      <section class="panel" id="testSection">
+        <h2>Tests (Out of 20)</h2>
+        <div id="testTableContainer" class="table-wrapper"></div>
+      </section>
+
+      <section class="panel" id="summarySection">
+        <h2>Grades Summary</h2>
+        <div id="summaryTableContainer" class="table-wrapper"></div>
+      </section>
+    </div>
+
+    <!-- Cumulative View Container -->
+    <div id="cumulativeView" class="view-container" style="display: none;">
+      <section class="panel" id="cumulativeSection">
+        <h2>Cumulative Grade Summary</h2>
+        <div class="cumulative-controls">
+          <label for="dateRangeSelect">Date Range:</label>
+          <select id="dateRangeSelect">
+            <option value="all">All Time</option>
+            <option value="last7">Last 7 Days</option>
+            <option value="last30">Last 30 Days</option>
+            <option value="custom">Custom Range</option>
+          </select>
+          <div id="customDateRange" style="display: none;">
+            <input type="date" id="startDate" />
+            <span>to</span>
+            <input type="date" id="endDate" />
+          </div>
+          <button type="button" id="refreshCumulativeBtn" class="btn outline">Refresh</button>
+        </div>
+        <div id="cumulativeTableContainer" class="table-wrapper"></div>
+      </section>
+    </div>
+  </main>
+  
+  <!-- Modal containers -->
+  <div id="modalOverlay" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Modal Title</h3>
+        <button type="button" class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Dynamic content will be inserted here -->
+      </div>
+    </div>
+  </div>
+  
+  <footer class="app-footer">Berniklau Education Solutions Team</footer>
+  <script src="app.js"></script>
+</body>
+</html>

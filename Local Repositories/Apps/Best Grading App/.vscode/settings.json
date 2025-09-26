@@ -1,0 +1,6 @@
+{
+  "liveServer.settings.root": "/Users/brandonhinrichs/Local Repositories/Apps/Best Grading App",
+  "liveServer.settings.port": 5501,
+  "liveServer.settings.ignoreFiles": ["**/.vscode/**", "**/node_modules/**"],
+  "liveServer.settings.wait": 50
+}

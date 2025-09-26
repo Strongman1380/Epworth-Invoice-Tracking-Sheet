@@ -1,0 +1,10 @@
+*
+!.gitignore
+!index.html
+!style.css
+!app.js
+!README.md
+!package.json
+!server.js
+!.vscode/
+!.vscode/settings.json
