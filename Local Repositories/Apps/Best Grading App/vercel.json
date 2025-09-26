@@ -6,7 +6,9 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "github": {
-    "silent": true
+    "enabled": true,
+    "silent": false,
+    "autoAlias": true
   },
   "headers": [
     {
@@ -18,5 +20,13 @@
         { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     }
+  ],
+  "functions": {
+    "api/*.js": {
+      "memory": 256
+    }
+  },
+  "redirects": [
+    { "source": "/favicon.ico", "destination": "/Files to use/BEST_logo_small.jpg", "permanent": true }
   ]
 }
