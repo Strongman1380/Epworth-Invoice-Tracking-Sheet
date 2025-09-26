@@ -8,3 +8,7 @@
 !server.js
 !.vscode/
 !.vscode/settings.json
+!vercel.json
+!.vercelignore
+!sw.js
+!favicon.ico

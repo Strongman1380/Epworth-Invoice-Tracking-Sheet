@@ -1,15 +1,21 @@
 {
-  "name": "best-grading-app",
+  "name": "best-grade-app",
   "version": "1.0.0",
   "private": true,
   "description": "BEST Classroom Grader static app",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "vercel dev",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "compression": "^1.7.4",
-    "express": "^4.19.2",
-    "sqlite3": "^5.1.7"
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "vercel": "^32.5.6"
+  },
+  "engines": {
+    "node": ">=16.x"
   }
 }
