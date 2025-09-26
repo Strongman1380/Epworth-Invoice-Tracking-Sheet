@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "buildCommand": false,
-  "devCommand": "npm run dev",
+  "buildCommand": null,
   "outputDirectory": ".",
-  "cleanUrls": true,
+  "cleanUrls": false,
   "trailingSlash": false,
-  "github": {
-    "enabled": true,
-    "silent": false,
-    "autoAlias": true
-  },
   "headers": [
     {
       "source": "/(.*)",
@@ -21,12 +15,7 @@
       ]
     }
   ],
-  "functions": {
-    "api/*.js": {
-      "memory": 256
-    }
-  },
   "redirects": [
-    { "source": "/favicon.ico", "destination": "/Files to use/BEST_logo_small.jpg", "permanent": true }
+    { "source": "/favicon.ico", "destination": "/assets/BEST_logo_small.jpg", "permanent": true }
   ]
 }
