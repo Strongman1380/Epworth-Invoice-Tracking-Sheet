@@ -12,3 +12,7 @@
 !.vercelignore
 !sw.js
 !favicon.ico
+!assets/
+!assets/*
+!DATA_COLLECTION_GUIDE.md
+!DEPLOYMENT_CHECKLIST.md
