@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "vercel dev",
-    "build": "echo 'No build step needed'"
+    "build": "echo 'No build step needed for static site'"
   },
   "dependencies": {
     "compression": "^1.7.4",
