@@ -100,6 +100,11 @@ app.post('/api/day/:date', (req, res) => {
   });
 });
 
+// Provide a favicon so browsers stop requesting a non-existent ICO file
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'Files to use', 'BEST_logo_small.jpg'));
+});
+
 // Serve static files from current directory (no build step)
 app.use(express.static(__dirname, { extensions:['html'] }));
 
