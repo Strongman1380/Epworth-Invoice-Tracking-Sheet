@@ -38,10 +38,6 @@
     <section class="panel data-management-panel">
       <h2>Data Management</h2>
       <div class="flex-row gap-sm" style="flex-wrap:wrap; align-items:center">
-        <button type="button" id="exportDataBtn" class="btn outline" title="Export All Data">Export JSON</button>
-        <button type="button" id="exportCSVBtn" class="btn outline" title="Export CSV">Export CSV</button>
-        <label for="importDataFile" class="btn outline" style="cursor: pointer;" title="Import Data">Import Data</label>
-        <input type="file" id="importDataFile" accept=".json" style="display: none;" />
         <button type="button" id="viewStatsBtn" class="btn outline" title="View Statistics">Statistics</button>
         <button type="button" id="manageStudentsBtn" class="btn outline" title="Manage Students">Manage Students</button>
       </div>
@@ -58,17 +54,21 @@
 
     <!-- Daily View Container -->
     <div id="dailyView" class="view-container">
-      <section class="panel" id="assignmentSection">
+      <!-- Mobile Student Cards Container - hidden on desktop -->
+      <div id="mobileStudentCards" class="mobile-only"></div>
+
+      <!-- Desktop Tables - All Grids Side by Side -->
+      <section class="panel desktop-grid" id="assignmentSection">
         <h2>Assignments (Out of 10)</h2>
         <div id="assignmentTableContainer" class="table-wrapper"></div>
       </section>
 
-      <section class="panel" id="testSection">
+      <section class="panel desktop-grid" id="testSection">
         <h2>Tests (Out of 20)</h2>
         <div id="testTableContainer" class="table-wrapper"></div>
       </section>
 
-      <section class="panel" id="summarySection">
+      <section class="panel desktop-grid" id="summarySection">
         <h2>Grades Summary</h2>
         <div id="summaryTableContainer" class="table-wrapper"></div>
       </section>

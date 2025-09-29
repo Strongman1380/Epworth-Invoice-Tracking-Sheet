@@ -32,12 +32,60 @@ body {
   margin: 0 auto 2rem;
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   align-items: start;
   flex: 1;
   align-content: start;
   justify-items: stretch;
   padding: 1rem 1vw 2rem;
+}
+
+/* Control panels and cumulative view span full width */
+.add-student-panel,
+.data-management-panel,
+.tab-navigation-panel,
+#cumulativeSection {
+  grid-column: 1 / -1;
+}
+
+/* Mobile cards - hidden on desktop, visible on mobile */
+.mobile-only {
+  display: none;
+}
+
+/* Desktop grids - visible by default on larger screens */
+@media (min-width: 601px) {
+  .mobile-only {
+    display: none;
+  }
+  
+  .desktop-grid {
+    display: flex;
+  }
+}
+
+/* Grid sections for side-by-side layout */
+.desktop-grid {
+  display: flex;
+  flex-direction: column;
+  min-height: 350px;
+}
+
+#assignmentSection,
+#testSection,
+#summarySection {
+  display: flex;
+  flex-direction: column;
+  min-height: 350px;
+}
+
+#assignmentSection .table-wrapper,
+#testSection .table-wrapper,
+#summarySection .table-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
 }
 .panel { 
   background: var(--panel-bg); 
@@ -261,13 +309,65 @@ tbody tr:last-child td {
   display: table-header-group; 
 }
 
-/* Tablet responsiveness */
-@media (max-width: 768px) {
+/* Tablet responsiveness - larger tablets get side-by-side grids */
+@media (min-width: 601px) and (max-width: 768px) {
+  .layout {
+    padding: 0.5rem;
+    gap: 0.5rem;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .add-student-panel,
+  .data-management-panel,
+  .tab-navigation-panel {
+    grid-column: 1 / -1;
+  }
+  
+  /* Hide mobile cards, show desktop grids */
+  .mobile-only {
+    display: none;
+  }
+  
+  .desktop-grid {
+    display: flex;
+  }
+  
+  #assignmentSection,
+  #testSection,
+  #summarySection {
+    display: flex;
+    flex-direction: column;
+    min-height: 250px;
+  }
+  
+  #assignmentSection .table-wrapper,
+  #testSection .table-wrapper,
+  #summarySection .table-wrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+}
+
+/* Small tablet and mobile - single column layout */
+@media (max-width: 600px) {
   .layout {
     padding: 0.5rem;
     gap: 0.5rem;
     grid-template-columns: 1fr;
   }
+  
+  /* Show mobile cards, hide desktop grids */
+  .mobile-only {
+    display: block;
+    grid-column: 1 / -1;
+  }
+  
+  .desktop-grid {
+    display: none;
+  }
+}
   
   .panel {
     padding: 1rem;
@@ -328,6 +428,17 @@ tbody tr:last-child td {
   .layout {
     padding: 0.25rem;
     gap: 0.5rem;
+    grid-template-columns: 1fr;
+  }
+  
+  /* Show mobile cards, hide desktop grids */
+  .mobile-only {
+    display: block;
+    grid-column: 1 / -1;
+  }
+  
+  .desktop-grid {
+    display: none;
   }
   
   .panel {
@@ -507,11 +618,11 @@ tbody tr:last-child td {
   }
 }
 
-/* Medium screen layout */
+/* Medium screen layout - three grids side by side */
 @media (min-width: 769px) and (max-width: 1099px) {
   .layout {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
     padding: 1rem 1vw 2rem;
   }
   
@@ -519,6 +630,15 @@ tbody tr:last-child td {
   .data-management-panel,
   .tab-navigation-panel {
     grid-column: 1 / -1;
+  }
+  
+  /* Hide mobile cards, show desktop grids */
+  .mobile-only {
+    display: none;
+  }
+  
+  .desktop-grid {
+    display: flex;
   }
   
   .table-wrapper {
@@ -529,8 +649,19 @@ tbody tr:last-child td {
   #assignmentSection,
   #testSection,
   #summarySection {
+    display: flex;
+    flex-direction: column;
     max-height: none;
     min-height: 300px;
+  }
+  
+  #assignmentSection .table-wrapper,
+  #testSection .table-wrapper,
+  #summarySection .table-wrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
   }
 }
 
@@ -545,6 +676,15 @@ tbody tr:last-child td {
   .data-management-panel,
   .tab-navigation-panel {
     grid-column: 1 / -1; /* make the control panels full width on their own row */
+  }
+  
+  /* Hide mobile cards, show desktop grids */
+  .mobile-only {
+    display: none;
+  }
+  
+  .desktop-grid {
+    display: flex;
   }
   
   #assignmentSection,
