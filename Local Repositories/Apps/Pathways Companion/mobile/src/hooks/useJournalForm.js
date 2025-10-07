@@ -18,7 +18,7 @@ const PROMPTS = [
   },
 ];
 
-const EMOTIONS = ['Calm', 'Awareness', 'Hope', 'Guilt', 'Anger'];
+const EMOTIONS = ['Calm', 'Awareness', 'Hope', 'Guilt', 'Anger', 'Frustrated', 'Ashamed', 'Relief', 'Proud'];
 
 export function useJournalForm() {
   const [activePromptIndex, setActivePromptIndex] = useState(0);

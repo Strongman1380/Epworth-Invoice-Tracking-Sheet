@@ -21,7 +21,7 @@ class ReflectionCreate(BaseModel):
     userId: str = Field(default="demo-user", alias="userId")
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class ReflectionResponse(BaseModel):
@@ -58,7 +58,7 @@ class BehaviorCreate(BaseModel):
     replacementPractice: Optional[str] = Field(default=None, alias="replacementPractice")
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class BehaviorResponse(BaseModel):
@@ -81,7 +81,7 @@ class WheelProgressCreate(BaseModel):
     notes: Optional[str] = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class WheelProgressResponse(BaseModel):
@@ -101,7 +101,7 @@ class CrisisLogCreate(BaseModel):
     resolved: bool = False
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class CrisisLogResponse(BaseModel):
