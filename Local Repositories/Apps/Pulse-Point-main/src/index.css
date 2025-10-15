@@ -1,0 +1,176 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Trauma-informed primary: soft blue for trust and calm */
+    --primary: 210 50% 60%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Lavender-tinted secondary colors */
+    --secondary: 240 20% 96%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 240 15% 95%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* Gentle lavender accent */
+    --accent: 270 30% 90%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Gentle destructive color */
+    --destructive: 0 50% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 25% 90%;
+    --input: 220 25% 93%;
+    
+    --ring: 210 50% 60%;
+
+    --radius: 0.75rem;
+
+    /* Enhanced trauma-informed custom colors */
+    --healing: 150 40% 75%;
+    --safety: 210 60% 85%;
+    --warmth: 35 60% 85%;
+    --trust: 210 50% 60%;
+    --calm: 240 30% 95%;
+    --lavender-soft: 270 30% 90%;
+    --blue-soft: 210 40% 85%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 158 64% 52%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 158 64% 52%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Softer, less saturated primary for dark mode */
+    --primary: 210 40% 50%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 5% 15%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 270 20% 25%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5% 15%;
+    --input: 240 5% 20%;
+    --ring: 210 40% 50%;
+
+    --sidebar-background: 240 10% 3.9%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 210 40% 50%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 5% 15%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 5% 15%;
+    --sidebar-ring: 210 40% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+}
+
+@layer components {
+  /* Trauma-informed design patterns */
+  .trauma-safe-card {
+    @apply bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-xl shadow-sm transition-all duration-300 hover:shadow-md;
+  }
+  
+  .provider-focus-header {
+    @apply text-slate-900 font-semibold tracking-tight;
+  }
+  
+  .gentle-interaction {
+    @apply transition-all duration-200 hover:scale-[1.02] focus:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary/20;
+  }
+  
+  .safe-button {
+    @apply bg-primary/90 hover:bg-primary text-white rounded-lg px-6 py-3 font-medium transition-all duration-200 shadow-sm hover:shadow-md focus:ring-2 focus:ring-primary/20 focus:outline-none;
+  }
+  
+  .trauma-gradient {
+    background: linear-gradient(135deg, 
+      hsl(var(--safety)) 0%, 
+      hsl(var(--calm)) 25%, 
+      white 50%, 
+      hsl(var(--warmth)) 75%, 
+      hsl(var(--healing)) 100%);
+  }
+}
+
+@layer utilities {
+  .text-trauma-primary {
+    color: hsl(var(--trust));
+  }
+  
+  .bg-trauma-safe {
+    background-color: hsl(var(--safety));
+  }
+  
+  .bg-trauma-warm {
+    background-color: hsl(var(--warmth));
+  }
+  
+  .bg-trauma-calm {
+    background-color: hsl(var(--calm));
+  }
+  
+  .border-trauma-gentle {
+    border-color: hsl(var(--trust) / 0.3);
+  }
+  
+  .bg-trauma-lavender {
+    background-color: hsl(var(--lavender-soft));
+  }
+  
+  .bg-trauma-blue {
+    background-color: hsl(var(--blue-soft));
+  }
+  
+  .text-trauma-safe {
+    color: hsl(var(--safety));
+  }
+}
