@@ -715,7 +715,70 @@
     </div>
   </header>
 
-  <div class="modal-backdrop" id="privacyModal" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
+  <!-- Access Code Authentication Modal -->
+  <div class="modal-backdrop" id="accessCodeModal" role="dialog" aria-modal="true" aria-labelledby="accessCodeTitle">
+    <div class="modal">
+      <h2 id="accessCodeTitle">🔐 Access Code Required</h2>
+      <p>
+        This intake form requires a valid access code provided by your healthcare provider. Please enter it below to proceed.
+      </p>
+      <div class="form-group">
+        <label for="accessCodeInput">Access Code</label>
+        <input
+          type="password"
+          id="accessCodeInput"
+          placeholder="Enter your access code"
+          autocomplete="off"
+          required
+        >
+        <small style="color: #666; margin-top: 8px; display: block;">Your provider should have provided this code in your appointment confirmation email or document.</small>
+      </div>
+      <div id="accessCodeError" style="color: var(--error); margin-top: 12px; display: none;"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn-subtle" id="accessCodeExitBtn">Exit</button>
+        <button type="button" class="btn-primary" id="accessCodeSubmitBtn">Verify Access Code</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Encryption Passphrase Modal -->
+  <div class="modal-backdrop" id="encryptionModal" role="dialog" aria-modal="true" aria-labelledby="encryptionTitle" style="display: none;">
+    <div class="modal">
+      <h2 id="encryptionTitle">🔐 Set Encryption Passphrase</h2>
+      <p>
+        Your sensitive information will be encrypted with a passphrase only you know. Create a strong passphrase to protect your data.
+      </p>
+      <div class="form-group">
+        <label for="encryptionPassphrase">Create Encryption Passphrase</label>
+        <input
+          type="password"
+          id="encryptionPassphrase"
+          placeholder="Enter a strong passphrase (12+ characters recommended)"
+          autocomplete="off"
+          required
+        >
+        <small style="color: #666; margin-top: 8px; display: block;">Include uppercase, lowercase, numbers, and symbols for maximum security.</small>
+      </div>
+      <div class="form-group">
+        <label for="encryptionPassphraseConfirm">Confirm Encryption Passphrase</label>
+        <input
+          type="password"
+          id="encryptionPassphraseConfirm"
+          placeholder="Re-enter your passphrase"
+          autocomplete="off"
+          required
+        >
+      </div>
+      <div id="encryptionError" style="color: var(--error); margin-top: 12px; display: none;"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn-subtle" id="encryptionExitBtn">Exit</button>
+        <button type="button" class="btn-primary" id="encryptionContinueBtn">Create &amp; Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Acknowledgment Modal -->
+  <div class="modal-backdrop" id="privacyModal" role="dialog" aria-modal="true" aria-labelledby="privacyTitle" style="display: none;">
     <div class="modal">
       <h2 id="privacyTitle">Before we begin</h2>
       <p>
@@ -1648,6 +1711,20 @@
       "consents.rights.name"
     ];
 
+    // ============================================
+    // ACCESS CODE CONFIGURATION
+    // ============================================
+    // IMPORTANT: Provider access codes go here
+    // These should be generated and securely distributed to clients
+    // You can modify these codes as needed for your practice
+    // Format: codes can be single strings or arrays for multiple valid codes
+    const VALID_ACCESS_CODES = [
+      "LEMKE2024",        // Default example code
+      "WEBER2024",        // Alternative example
+      // Add more codes as needed, one per line
+      // "YOUR_CODE_HERE"
+    ];
+
     // In-memory state only
     const formState = {
       step: 1,
@@ -1829,10 +1906,28 @@
     const errorSummary = document.getElementById("errorSummary");
     const errorList = document.getElementById("errorList");
     const printBtn = document.getElementById("printBtn");
+
+    // Access Code Modal Elements
+    const accessCodeModal = document.getElementById("accessCodeModal");
+    const accessCodeInput = document.getElementById("accessCodeInput");
+    const accessCodeSubmitBtn = document.getElementById("accessCodeSubmitBtn");
+    const accessCodeExitBtn = document.getElementById("accessCodeExitBtn");
+    const accessCodeError = document.getElementById("accessCodeError");
+
+    // Encryption Modal Elements
+    const encryptionModal = document.getElementById("encryptionModal");
+    const encryptionPassphrase = document.getElementById("encryptionPassphrase");
+    const encryptionPassphraseConfirm = document.getElementById("encryptionPassphraseConfirm");
+    const encryptionContinueBtn = document.getElementById("encryptionContinueBtn");
+    const encryptionExitBtn = document.getElementById("encryptionExitBtn");
+    const encryptionError = document.getElementById("encryptionError");
+
+    // Privacy Modal Elements
     const modal = document.getElementById("privacyModal");
     const modalCheckbox = document.getElementById("privacyAcknowledge");
     const modalContinueBtn = document.getElementById("modalContinueBtn");
     const modalExitBtn = document.getElementById("modalExitBtn");
+
     const quickPrintBtn = document.getElementById("quickPrintBtn");
     const emailBtn = document.getElementById("emailBtn");
     const clearAllBtn = document.getElementById("clearAllBtn");
@@ -1843,6 +1938,8 @@
     let currentStep = 1;
     let hasUnsavedChanges = false;
     let completionNotified = false;
+    let isAccessCodeAuthenticated = false;
+    let isEncryptionInitialized = false;
 
     /* Utilities */
     const setValueAtPath = (obj, path, value) => {
@@ -1873,20 +1970,154 @@
       }
     });
 
-    /* Modal handling */
+    /* ============================================
+       ACCESS CODE AUTHENTICATION
+       ============================================ */
+
+    // Verify access code
+    const verifyAccessCode = () => {
+      const code = accessCodeInput.value.trim().toUpperCase();
+
+      if (!code) {
+        accessCodeError.textContent = "Please enter an access code.";
+        accessCodeError.style.display = "block";
+        return;
+      }
+
+      // Check if the entered code matches any valid code
+      const isValid = VALID_ACCESS_CODES.some(validCode =>
+        validCode.toUpperCase() === code
+      );
+
+      if (isValid) {
+        isAccessCodeAuthenticated = true;
+        accessCodeModal.style.display = "none";
+        // Show encryption modal next
+        encryptionModal.style.display = "flex";
+        encryptionPassphrase.focus();
+      } else {
+        accessCodeError.textContent = "Invalid access code. Please try again or contact your provider.";
+        accessCodeError.style.display = "block";
+        accessCodeInput.value = "";
+        accessCodeInput.focus();
+      }
+    };
+
+    // Access Code Modal Handlers
+    accessCodeSubmitBtn.addEventListener("click", verifyAccessCode);
+
+    accessCodeInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        verifyAccessCode();
+      }
+    });
+
+    accessCodeExitBtn.addEventListener("click", () => {
+      window.location.href = "about:blank";
+    });
+
+    /* ============================================
+       ENCRYPTION PASSPHRASE SETUP
+       ============================================ */
+
+    // Verify and setup encryption passphrase
+    const setupEncryptionPassphrase = async () => {
+      const passphrase = encryptionPassphrase.value;
+      const confirmPassphrase = encryptionPassphraseConfirm.value;
+
+      // Clear previous error
+      encryptionError.style.display = "none";
+      encryptionError.textContent = "";
+
+      // Validation
+      if (!passphrase || !confirmPassphrase) {
+        encryptionError.textContent = "Please enter and confirm your passphrase.";
+        encryptionError.style.display = "block";
+        return;
+      }
+
+      if (passphrase.length < 8) {
+        encryptionError.textContent = "Passphrase must be at least 8 characters long (12+ recommended).";
+        encryptionError.style.display = "block";
+        return;
+      }
+
+      if (passphrase !== confirmPassphrase) {
+        encryptionError.textContent = "Passphrases do not match. Please try again.";
+        encryptionError.style.display = "block";
+        encryptionPassphrase.value = "";
+        encryptionPassphraseConfirm.value = "";
+        encryptionPassphrase.focus();
+        return;
+      }
+
+      // Initialize encryption with the passphrase
+      const success = await encryptor.initializeWithPassphrase(passphrase);
+
+      if (success) {
+        isEncryptionInitialized = true;
+        encryptionModal.style.display = "none";
+
+        // Add visual indicator in header
+        const headerContainer = document.querySelector("header .container");
+        if (headerContainer) {
+          const indicator = document.createElement("div");
+          indicator.className = "encryption-indicator";
+          indicator.innerHTML = "🔒 <strong>Encrypted & Authenticated</strong>";
+          headerContainer.style.position = "relative";
+          headerContainer.appendChild(indicator);
+        }
+
+        // Add status indicator in the form
+        const mainContent = document.querySelector("main");
+        if (mainContent) {
+          const statusDiv = document.createElement("div");
+          statusDiv.className = "encryption-status active";
+          statusDiv.innerHTML = "✅ Access Verified & Encryption Active: Your data is protected";
+          mainContent.insertBefore(statusDiv, mainContent.firstChild);
+        }
+
+        // Show privacy modal next
+        modal.style.display = "flex";
+      } else {
+        encryptionError.textContent = "Encryption initialization failed. Please try again.";
+        encryptionError.style.display = "block";
+      }
+    };
+
+    // Encryption Modal Handlers
+    encryptionContinueBtn.addEventListener("click", setupEncryptionPassphrase);
+
+    encryptionPassphraseConfirm.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        setupEncryptionPassphrase();
+      }
+    });
+
+    encryptionExitBtn.addEventListener("click", () => {
+      if (confirm("Are you sure you want to exit? You will lose all progress.")) {
+        window.location.href = "about:blank";
+      }
+    });
+
+    /* ============================================
+       PRIVACY MODAL HANDLING
+       ============================================ */
     modalCheckbox.addEventListener("change", () => {
       modalContinueBtn.disabled = !modalCheckbox.checked;
     });
 
     modalContinueBtn.addEventListener("click", () => {
-      modal.remove();
+      modal.style.display = "none";
       modalCheckbox.setAttribute("disabled", "disabled");
-      goToStep(1);
+      initializeForm();
       document.getElementById("legalName").focus();
     });
 
     modalExitBtn.addEventListener("click", () => {
-      window.location.href = "about:blank";
+      if (confirm("Are you sure you want to exit? You will lose all progress.")) {
+        window.location.href = "about:blank";
+      }
     });
 
     /* Character counters */
@@ -3156,81 +3387,17 @@
     }
 
     /* ============================================
-       ENCRYPTION INITIALIZATION
+       PAGE INITIALIZATION
        ============================================ */
 
-    /**
-     * Initialize encryption with a passphrase prompt
-     * This runs once when the page loads
-     */
-    (async () => {
-      // Show a modal or prompt for encryption passphrase
-      const passphrase = prompt(
-        "🔐 Encryption Security\n\nTo protect sensitive information (names, phone numbers, emails, addresses, insurance details, etc.), please create a secure passphrase.\n\nThis passphrase will encrypt your data as you enter it. You'll need it to decrypt your information later.\n\nMinimum 12 characters recommended.",
-        ""
-      );
+    // Focus on access code input when page loads
+    window.addEventListener("load", () => {
+      accessCodeInput.focus();
+    });
 
-      if (passphrase && passphrase.length > 0) {
-        const success = await encryptor.initializeWithPassphrase(passphrase);
-        if (success) {
-          console.log("✓ Encryption enabled and initialized");
-          // Add visual indicator in header
-          const headerContainer = document.querySelector("header .container");
-          if (headerContainer) {
-            const indicator = document.createElement("div");
-            indicator.className = "encryption-indicator";
-            indicator.innerHTML = "🔒 <strong>Encrypted</strong>";
-            headerContainer.style.position = "relative";
-            headerContainer.appendChild(indicator);
-          }
-
-          // Add status indicator in the form instructions area
-          const mainContent = document.querySelector("main");
-          if (mainContent) {
-            const statusDiv = document.createElement("div");
-            statusDiv.className = "encryption-status active";
-            statusDiv.innerHTML = "🔐 Encryption Active: Your sensitive information is being encrypted with XSalsa20-Poly1305";
-            mainContent.insertBefore(statusDiv, mainContent.firstChild);
-          }
-        } else {
-          console.warn("⚠ Encryption failed to initialize - falling back to unencrypted mode");
-          alert("Encryption initialization failed. Your data will be stored unencrypted.");
-
-          // Add warning indicator
-          const mainContent = document.querySelector("main");
-          if (mainContent) {
-            const statusDiv = document.createElement("div");
-            statusDiv.className = "encryption-status warning";
-            statusDiv.innerHTML = "⚠ Encryption Failed: Your data will be stored unencrypted";
-            mainContent.insertBefore(statusDiv, mainContent.firstChild);
-          }
-        }
-      } else {
-        console.warn("⚠ No passphrase provided - encryption disabled");
-        encryptor.encryptionEnabled = false;
-
-        // Add warning indicator for no encryption
-        const mainContent = document.querySelector("main");
-        if (mainContent) {
-          const statusDiv = document.createElement("div");
-          statusDiv.className = "encryption-status warning";
-          statusDiv.innerHTML = "⚠ No Encryption: Your data will be stored unencrypted. Please refresh and enter a passphrase for security.";
-          mainContent.insertBefore(statusDiv, mainContent.firstChild);
-        }
-
-        alert("⚠ No passphrase entered. Your data will NOT be encrypted. Please refresh and enter a passphrase for security.");
-      }
-
-      // Continue with form initialization
-      startFormInitialization();
-    })();
-
-    /**
-     * Separate function for form initialization
-     * This is called after encryption is set up
-     */
-    function startFormInitialization() {
-      /* Initialize */
+    // Initialize form after all authentication steps complete
+    // This will be called from the privacy modal handler
+    function initializeForm() {
       goToStep(1);
       validateCurrentStep();
     }
