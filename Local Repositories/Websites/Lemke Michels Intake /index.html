@@ -1,0 +1,3264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lemke Michels Psychotherapy &amp; Weber Behavioral Health — Intake</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self'; style-src 'self' 'unsafe-inline';">
+  <!-- TweetNaCl.js for client-side encryption -->
+  <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+  <style>
+    /* Root theme */
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #272626;
+      --muted: #52565f;
+      --accent: #2f5aae;
+      --accent-strong: #244584;
+      --border: #d7d9e0;
+      --radius: 14px;
+      --radius-small: 6px;
+      --space-xs: 8px;
+      --space-sm: 12px;
+      --space: 20px;
+      --space-lg: 28px;
+      --shadow: 0 12px 30px rgba(18, 18, 18, 0.08);
+      --focus: 0 0 0 4px rgba(47, 90, 174, 0.25);
+      --error: #b1273f;
+      --warning: #ca8829;
+      scroll-behavior: smooth;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Arial", "Helvetica", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    h1, h2, h3, h4 {
+      font-family: "Arial", "Helvetica", sans-serif;
+      line-height: 1.2;
+      margin-top: 0;
+      font-weight: 700;
+    }
+
+    h1 { font-size: clamp(1.8rem, 2.5vw, 2.4rem); }
+    h2 { font-size: clamp(1.4rem, 2vw, 1.9rem); }
+    h3 { font-size: clamp(1.2rem, 1.6vw, 1.5rem); }
+
+    p {
+      margin-top: 0;
+      margin-bottom: var(--space-sm);
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    header {
+      background: linear-gradient(135deg, #2f5aae 0%, #244584 100%);
+      padding: var(--space-lg) var(--space);
+      color: #ffffff;
+    }
+
+    header .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    header .brand h1 {
+      color: #ffffff;
+    }
+
+    header .supporting-text {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    header svg {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+    }
+
+    .container {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 0 var(--space) var(--space-lg);
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: clamp(var(--space-sm), 2vw, var(--space-lg));
+      margin-bottom: var(--space-lg);
+    }
+
+    .card h2 {
+      margin-bottom: var(--space-sm);
+    }
+
+    .progress-indicator {
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: var(--space-sm);
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .progress-bar {
+      position: relative;
+      flex: 1 1 200px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-bar span {
+      position: absolute;
+      inset: 0;
+      width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+      border-radius: inherit;
+      transition: width 0.3s ease;
+    }
+
+    form {
+      position: relative;
+    }
+
+    fieldset {
+      border: 0;
+      padding: 0;
+      margin: 0;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: var(--space);
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    label {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    small {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="date"],
+    input[type="number"],
+    input[type="url"],
+    select,
+    textarea {
+      border-radius: var(--radius-small);
+      border: 2px solid var(--border);
+      padding: 12px 16px;
+      min-height: 52px;
+      font: inherit;
+      background: rgba(255, 255, 255, 0.98);
+      color: inherit;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    button:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+      border-color: var(--accent);
+    }
+
+    .inline-field {
+      display: flex;
+      gap: var(--space-sm);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .inline-field input[type="checkbox"],
+    .inline-field input[type="radio"] {
+      width: 20px;
+      height: 20px;
+    }
+
+    .checkbox-grid,
+    .radio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: var(--space-sm);
+      margin-top: var(--space-sm);
+    }
+
+    .chip-input {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+    }
+
+    .chip {
+      background: rgba(47, 90, 174, 0.1);
+      color: var(--accent-strong);
+      padding: 6px 10px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.9rem;
+    }
+
+    .chip button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      padding: 0;
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    .chip-input input[type="text"] {
+      min-height: 44px;
+    }
+
+    .dynamic-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space);
+    }
+
+    .dynamic-item {
+      border: 1px solid rgba(47, 90, 174, 0.18);
+      border-radius: var(--radius-small);
+      padding: var(--space);
+      background: rgba(255, 255, 255, 0.96);
+    }
+
+    .dynamic-item header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-sm);
+    }
+
+    .dynamic-item header h3 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+
+    .dynamic-item header button {
+      background: transparent;
+      border: 0;
+      color: var(--accent-strong);
+      font-weight: 600;
+      cursor: pointer;
+      padding: 6px 10px;
+    }
+
+    .dynamic-item header button:hover,
+    .chip button:hover {
+      text-decoration: underline;
+    }
+
+    .actions-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-bottom: var(--space);
+    }
+
+    .actions-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+    }
+
+    .actions-bar button,
+    nav button {
+      font-weight: 600;
+    }
+
+    button {
+      cursor: pointer;
+      border-radius: var(--radius-small);
+      border: 0;
+      font: inherit;
+      padding: 12px 18px;
+      min-height: 48px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(47, 90, 174, 0.25);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-strong);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #ffffff;
+      color: var(--accent-strong);
+      border: 1px solid rgba(47, 90, 174, 0.25);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(47, 90, 174, 0.08);
+    }
+
+    .btn-subtle {
+      background: transparent;
+      color: var(--accent-strong);
+      padding: 10px 12px;
+    }
+
+    nav.form-nav {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      margin-top: var(--space);
+      flex-wrap: wrap;
+    }
+
+    nav.form-nav button {
+      flex: 1 1 160px;
+    }
+
+    nav.form-nav .spacer {
+      flex: 1 1 160px;
+    }
+
+    .step-counter {
+      font-weight: 600;
+    }
+
+    .supporting-text {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: var(--space);
+    }
+
+    .error-summary {
+      border: 1px solid rgba(177, 39, 63, 0.65);
+      background: rgba(177, 39, 63, 0.1);
+      color: var(--error);
+      padding: var(--space-sm);
+      border-radius: var(--radius-small);
+      margin-bottom: var(--space);
+    }
+
+    .error-summary h3 {
+      margin-bottom: var(--space-xs);
+      font-size: 1.05rem;
+    }
+
+    .error-text {
+      color: var(--error);
+      font-size: 0.9rem;
+    }
+
+    [aria-invalid="true"] {
+      border-color: rgba(177, 39, 63, 0.75);
+      box-shadow: 0 0 0 1px rgba(177, 39, 63, 0.25);
+    }
+
+    dl {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(200px, 2fr);
+      gap: 4px 16px;
+      margin: 0 0 var(--space);
+    }
+
+    dt {
+      font-weight: 600;
+    }
+
+    dd {
+      margin: 0 0 8px;
+    }
+
+    .summary-block {
+      border: 1px solid rgba(47, 90, 174, 0.18);
+      border-radius: var(--radius-small);
+      padding: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+
+    details.summary-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-small);
+      padding: var(--space-sm) var(--space);
+      background: rgba(255, 255, 255, 0.9);
+      margin-bottom: var(--space-sm);
+    }
+
+    details.summary-card summary {
+      cursor: pointer;
+      font-weight: 600;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+
+    details.summary-card summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.summary-card summary button {
+      margin-left: auto;
+    }
+
+    footer {
+      padding: var(--space-lg) var(--space);
+      background: linear-gradient(135deg, #244584 0%, #2f5aae 100%);
+    }
+
+    footer p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.85);
+      text-align: center;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(22, 24, 30, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space);
+      z-index: 10;
+    }
+
+    .modal {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      max-width: 720px;
+      width: min(100%, 720px);
+      padding: clamp(var(--space), 3vw, calc(var(--space-lg) + 12px));
+      position: relative;
+    }
+
+    .modal h2 {
+      margin-bottom: var(--space-sm);
+    }
+
+    .modal ul {
+      padding-left: 20px;
+      margin-bottom: var(--space);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      background: rgba(47, 90, 174, 0.12);
+      color: var(--accent-strong);
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .section-note {
+      font-size: 0.9rem;
+      color: var(--muted);
+      background: rgba(47, 90, 174, 0.08);
+      padding: var(--space-sm);
+      border-radius: var(--radius-small);
+      margin-bottom: var(--space);
+    }
+
+    .inline-muted {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .character-counter {
+      margin-left: auto;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .print-hidden {
+      display: inline-flex;
+    }
+
+    .print-summary {
+      display: none;
+      margin-bottom: var(--space-lg);
+    }
+
+    .print-summary > .summary-card {
+      border-radius: var(--radius);
+      border: 1px solid rgba(47, 90, 174, 0.18);
+      box-shadow: none;
+      padding: var(--space);
+      margin-bottom: var(--space);
+      background: #ffffff;
+    }
+
+    .print-summary h2 {
+      margin-bottom: var(--space-sm);
+    }
+
+    .summary-status {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: var(--space-sm);
+    }
+
+    @media (max-width: 720px) {
+      header {
+        padding: var(--space-lg) var(--space-sm);
+      }
+      .container {
+        padding: 0 var(--space-sm) var(--space-lg);
+      }
+      nav.form-nav {
+        flex-direction: column-reverse;
+      }
+
+      nav.form-nav button {
+        width: 100%;
+      }
+    }
+
+    @media print {
+      :root {
+        --bg: #ffffff;
+      }
+      body {
+        background: #fff;
+        color: #000;
+        font-size: 12pt;
+      }
+      header,
+      nav.form-nav,
+      .actions-bar,
+      .print-hidden,
+      .modal-backdrop {
+        display: none !important;
+      }
+      form {
+        display: none !important;
+      }
+      .card,
+      .dynamic-item {
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+        border-radius: 8px !important;
+      }
+      .card {
+        page-break-inside: avoid;
+        margin-bottom: 20px;
+      }
+      .print-summary {
+        display: block !important;
+      }
+      footer {
+        display: block;
+        text-align: left;
+      }
+      footer::after {
+        content: "Generated client-side for privacy.";
+        display: block;
+        margin-top: 8px;
+        font-size: 0.85rem;
+        color: #555;
+      }
+    }
+
+    /* Encryption security indicators */
+    .encryption-indicator {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      color: #fff;
+      font-size: 12px;
+      opacity: 0.9;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .encryption-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      background: rgba(47, 90, 174, 0.15);
+      color: var(--accent-strong);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: var(--space-sm);
+    }
+
+    .encryption-status.active {
+      background: rgba(34, 139, 34, 0.15);
+      color: #228b22;
+    }
+
+    .encryption-status.warning {
+      background: rgba(202, 136, 41, 0.15);
+      color: var(--warning);
+    }
+
+    @media print {
+      .encryption-indicator,
+      .encryption-status {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header role="banner">
+    <div class="container">
+      <div class="brand" aria-label="Lemke Michels Psychotherapy and Weber Behavioral Health">
+        <svg viewBox="0 0 64 64" role="img" aria-labelledby="logoTitle logoDesc">
+          <title id="logoTitle">Lemke Michels Psychotherapy and Weber Behavioral Health leaf logo</title>
+          <desc id="logoDesc">Geometric leaf growing from a circle</desc>
+          <circle cx="32" cy="32" r="30" fill="#e2e7f6" stroke="#2f5aae" stroke-width="4" />
+          <path d="M32 12c4 7 12 9 12 18 0 8-5 14-12 22-7-8-12-14-12-22 0-9 8-11 12-18z" fill="#2f5aae" opacity="0.9" />
+          <path d="M32 20c2 3 6 4 6 8 0 4-3 7-6 11-3-4-6-7-6-11 0-4 4-5 6-8z" fill="#244584" opacity="0.95" />
+        </svg>
+        <div>
+          <h1>Lemke Michels Psychotherapy &amp; Weber Behavioral Health · Client Intake</h1>
+          <p class="supporting-text">
+            Secure, browser-based intake. Your information stays on this page until you print or save a PDF copy.
+          </p>
+        </div>
+      </div>
+      <div class="progress-indicator">
+        <span class="step-counter" id="stepCounter" aria-live="polite">Step 0 of 10</span>
+        <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0" id="progressBar">
+          <span></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="modal-backdrop" id="privacyModal" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
+    <div class="modal">
+      <h2 id="privacyTitle">Before we begin</h2>
+      <p>
+        To protect your privacy, this intake runs entirely in your browser. We do not store, transmit, or share anything you enter.
+        Closing, refreshing, or navigating away will permanently erase your responses.
+      </p>
+      <ul>
+        <li>Use a private device and connection whenever possible.</li>
+        <li>Be sure you have enough uninterrupted time to complete all sections.</li>
+        <li>You may print or save a PDF before leaving.</li>
+      </ul>
+      <div class="inline-field">
+        <input type="checkbox" id="privacyAcknowledge">
+        <label for="privacyAcknowledge">I understand this form is ephemeral and consent to proceed.</label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-subtle" id="modalExitBtn">Exit</button>
+        <button type="button" class="btn-primary" id="modalContinueBtn" disabled>I understand &amp; continue</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="container" role="main">
+    <div id="errorSummary" class="error-summary" role="alert" aria-live="assertive" tabindex="-1" hidden>
+      <h3>We need a quick fix</h3>
+      <ul id="errorList"></ul>
+    </div>
+
+    <div class="actions-bar print-hidden" role="region" aria-label="Form utilities">
+      <div class="badge">In-browser only · Nothing is saved automatically</div>
+      <div class="actions-group">
+        <button type="button" class="btn-secondary" id="quickPrintBtn">Quick print preview</button>
+        <button type="button" class="btn-subtle" id="clearAllBtn">Clear all</button>
+      </div>
+    </div>
+
+    <form id="intakeForm" novalidate aria-describedby="formHelp">
+      <p id="formHelp" class="section-note">
+        Use the “Next” button to continue. Required fields are noted. You can revisit completed sections at any time. All inputs stay in this session only.
+      </p>
+
+      <!-- Step 1 -->
+      <section class="card" data-step="1" aria-labelledby="step1Title" hidden>
+        <h2 id="step1Title">Intake Information</h2>
+        <fieldset>
+          <legend class="visually-hidden">Demographics and contact information</legend>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="legalName">Full Legal Name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="legalName" name="legalName" data-model="intake.nameLegal" autocomplete="name" required>
+              <span class="error-text" id="legalNameError" hidden></span>
+            </div>
+            <div class="form-group">
+              <label for="preferredName">Preferred Name</label>
+              <input type="text" id="preferredName" name="preferredName" data-model="intake.namePreferred" autocomplete="nickname">
+            </div>
+            <div class="form-group">
+              <label for="pronouns">Pronouns</label>
+              <input type="text" id="pronouns" name="pronouns" data-model="intake.pronouns" placeholder="e.g., she/her, he/him">
+            </div>
+            <div class="form-group">
+              <label for="dob">Date of Birth <span class="inline-muted">(required)</span></label>
+              <input type="date" id="dob" name="dob" data-model="intake.dob" required>
+            </div>
+            <div class="form-group">
+              <label for="relationshipStatus">Relationship Status</label>
+              <select id="relationshipStatus" name="relationshipStatus" data-model="intake.relationship">
+                <option value="">Select status</option>
+                <option>Single</option>
+                <option>Married</option>
+                <option>Partnered</option>
+                <option>Separated</option>
+                <option>Divorced</option>
+                <option>Widowed</option>
+                <option>Prefer not to say</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="addressStreet">Street Address</label>
+              <input type="text" id="addressStreet" data-model="intake.address.street" autocomplete="street-address">
+            </div>
+            <div class="form-group">
+              <label for="addressCity">City</label>
+              <input type="text" id="addressCity" data-model="intake.address.city" autocomplete="address-level2">
+            </div>
+            <div class="form-group">
+              <label for="addressState">State</label>
+              <input type="text" id="addressState" data-model="intake.address.state" autocomplete="address-level1" maxlength="2">
+            </div>
+            <div class="form-group">
+              <label for="addressZip">ZIP</label>
+              <input type="text" id="addressZip" data-model="intake.address.zip" autocomplete="postal-code" inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="phone">Primary Phone <span class="inline-muted">(required)</span></label>
+              <input type="tel" id="phone" data-model="intake.phone" autocomplete="tel" required>
+              <div class="inline-field">
+                <input type="checkbox" id="phoneConsent" data-model="intake.phoneConsent" data-type="boolean">
+                <label for="phoneConsent">I consent to text messages regarding my care.</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="email">Email <span class="inline-muted">(required)</span></label>
+              <input type="email" id="email" data-model="intake.email" autocomplete="email" required>
+              <div class="inline-field">
+                <input type="checkbox" id="emailConsent" data-model="intake.emailConsent" data-type="boolean">
+                <label for="emailConsent">I consent to email communication.</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="reminderPreference">Appointment Reminder Preference</label>
+              <select id="reminderPreference" data-model="intake.reminder">
+                <option value="">Choose one</option>
+                <option>Text</option>
+                <option>Email</option>
+                <option>Call</option>
+                <option>None</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="employer">Employer / Occupation</label>
+              <input type="text" id="employer" data-model="intake.employer">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="emergencyName">Emergency Contact Name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="emergencyName" data-model="intake.emergency.name" required>
+            </div>
+            <div class="form-group">
+              <label for="emergencyRelation">Emergency Contact Relationship <span class="inline-muted">(required)</span></label>
+              <input type="text" id="emergencyRelation" data-model="intake.emergency.relation" required>
+            </div>
+            <div class="form-group">
+              <label for="emergencyPhone">Emergency Contact Phone <span class="inline-muted">(required)</span></label>
+              <input type="tel" id="emergencyPhone" data-model="intake.emergency.phone" required>
+            </div>
+            <div class="form-group">
+              <label for="referralSource">Referral Source</label>
+              <input type="text" id="referralSource" data-model="intake.referral">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="guardianName">Parent/Guardian Name</label>
+              <input type="text" id="guardianName" data-model="intake.minor.guardianName">
+              <small>Complete if you are under 18.</small>
+            </div>
+            <div class="form-group">
+              <label for="guardianRelation">Parent/Guardian Relationship</label>
+              <input type="text" id="guardianRelation" data-model="intake.minor.relation">
+            </div>
+            <div class="form-group">
+              <label for="guardianPhone">Parent/Guardian Phone</label>
+              <input type="tel" id="guardianPhone" data-model="intake.minor.phone">
+            </div>
+            <div class="form-group">
+              <label for="guardianEmail">Parent/Guardian Email</label>
+              <input type="email" id="guardianEmail" data-model="intake.minor.email">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="schoolName">School</label>
+              <input type="text" id="schoolName" data-model="intake.school.name">
+              <small>Complete if you are a student.</small>
+            </div>
+            <div class="form-group">
+              <label for="schoolGrade">Current Grade</label>
+              <input type="text" id="schoolGrade" data-model="intake.school.grade">
+            </div>
+            <div class="form-group">
+              <label for="pcpName">Primary Care Provider</label>
+              <input type="text" id="pcpName" data-model="intake.pcp.name">
+            </div>
+            <div class="form-group">
+              <label for="pcpClinic">Clinic</label>
+              <input type="text" id="pcpClinic" data-model="intake.pcp.clinic">
+            </div>
+            <div class="form-group">
+              <label for="pcpPhone">Provider Phone</label>
+              <input type="tel" id="pcpPhone" data-model="intake.pcp.phone">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="pharmacyName">Preferred Pharmacy</label>
+              <input type="text" id="pharmacyName" data-model="intake.pharmacy.name">
+            </div>
+            <div class="form-group">
+              <label for="pharmacyCity">Pharmacy City</label>
+              <input type="text" id="pharmacyCity" data-model="intake.pharmacy.city">
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="allergies">Allergies</label>
+              <textarea id="allergies" data-model="intake.allergies" maxlength="500"></textarea>
+              <div class="character-counter" data-counter-for="allergies"></div>
+            </div>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Step 2 -->
+      <section class="card" data-step="2" aria-labelledby="step2Title" hidden>
+        <h2 id="step2Title">Insurance &amp; Clinical Intake</h2>
+        <fieldset>
+          <legend class="visually-hidden">Insurance details and presenting concerns</legend>
+          <h3>Primary Insurance</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="primaryCarrier">Carrier</label>
+              <input type="text" id="primaryCarrier" data-model="insurance.primary.carrier">
+            </div>
+            <div class="form-group">
+              <label for="primaryMember">Member ID</label>
+              <input type="text" id="primaryMember" data-model="insurance.primary.memberId">
+            </div>
+            <div class="form-group">
+              <label for="primaryGroup">Group</label>
+              <input type="text" id="primaryGroup" data-model="insurance.primary.group">
+            </div>
+            <div class="form-group">
+              <label for="primarySubscriber">Subscriber Name</label>
+              <input type="text" id="primarySubscriber" data-model="insurance.primary.subscriberName">
+            </div>
+            <div class="form-group">
+              <label for="primarySubscriberDob">Subscriber DOB</label>
+              <input type="date" id="primarySubscriberDob" data-model="insurance.primary.subscriberDob">
+            </div>
+          </div>
+
+          <h3>Secondary Insurance</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="secondaryCarrier">Carrier</label>
+              <input type="text" id="secondaryCarrier" data-model="insurance.secondary.carrier">
+            </div>
+            <div class="form-group">
+              <label for="secondaryMember">Member ID</label>
+              <input type="text" id="secondaryMember" data-model="insurance.secondary.memberId">
+            </div>
+            <div class="form-group">
+              <label for="secondaryGroup">Group</label>
+              <input type="text" id="secondaryGroup" data-model="insurance.secondary.group">
+            </div>
+            <div class="form-group">
+              <label for="secondarySubscriber">Subscriber Name</label>
+              <input type="text" id="secondarySubscriber" data-model="insurance.secondary.subscriberName">
+            </div>
+            <div class="form-group">
+              <label for="secondarySubscriberDob">Subscriber DOB</label>
+              <input type="date" id="secondarySubscriberDob" data-model="insurance.secondary.subscriberDob">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reasonSeeking">Reason for seeking services now <span class="inline-muted">(required)</span></label>
+            <textarea id="reasonSeeking" data-model="insurance.reason" maxlength="1200" required></textarea>
+            <div class="character-counter" data-counter-for="reasonSeeking"></div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="sleepHours">Sleep (hours/night)</label>
+              <input type="number" id="sleepHours" data-model="insurance.sleep" min="0" step="0.5">
+            </div>
+            <div class="form-group">
+              <label for="dietNotes">Diet notes</label>
+              <input type="text" id="dietNotes" data-model="insurance.diet">
+            </div>
+            <div class="form-group">
+              <label for="activityDays">Physical activity (days/week)</label>
+              <input type="number" id="activityDays" data-model="insurance.activity" min="0" max="7">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group chip-input" data-chip-target="insurance.stressors">
+              <label for="stressorInput">Current stressors</label>
+              <input type="text" id="stressorInput" placeholder="Type and press Enter to add">
+              <div class="chip-list" aria-live="polite"></div>
+            </div>
+            <div class="form-group chip-input" data-chip-target="insurance.supports">
+              <label for="supportInput">Support systems</label>
+              <input type="text" id="supportInput" placeholder="Type and press Enter to add">
+              <div class="chip-list" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="psychiatricHistory">Psychiatric history</label>
+            <textarea id="psychiatricHistory" data-model="insurance.psychHistory.summary" maxlength="1200" placeholder="Past diagnoses, medications, inpatient/outpatient care"></textarea>
+            <div class="character-counter" data-counter-for="psychiatricHistory"></div>
+          </div>
+
+          <fieldset class="safety">
+            <legend><strong>Safety screen</strong></legend>
+            <p class="inline-muted">Check all that apply. Additional details appear for any recent safety concerns.</p>
+            <div class="checkbox-grid">
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.siEver" data-type="boolean">
+                Ever experienced suicidal thoughts
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.si30" data-type="boolean">
+                Suicidal thoughts in the past 30 days
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.selfHarmEver" data-type="boolean">
+                History of self-harm behavior
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.selfHarm30" data-type="boolean">
+                Self-harm behavior in the past 30 days
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.attempt" data-type="boolean">
+                Suicide attempt(s)
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.violence" data-type="boolean">
+                Homicidal or violent ideation or behavior
+              </label>
+              <label class="inline-field">
+                <input type="checkbox" data-model="insurance.safety.means" data-type="boolean">
+                Access to means of harm
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="safetyConcerns">Safety concerns today</label>
+              <textarea id="safetyConcerns" data-model="insurance.safety.concerns" maxlength="800"></textarea>
+              <div class="character-counter" data-counter-for="safetyConcerns"></div>
+            </div>
+          </fieldset>
+        </fieldset>
+      </section>
+
+      <!-- Step 3 -->
+      <section class="card" data-step="3" aria-labelledby="step3Title" hidden>
+        <h2 id="step3Title">Medical Information</h2>
+        <fieldset>
+          <legend class="visually-hidden">Medical profile</legend>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="height">Height</label>
+              <input type="text" id="height" data-model="medical.height" placeholder="e.g., 5'8&quot;">
+            </div>
+            <div class="form-group">
+              <label for="weight">Weight</label>
+              <input type="text" id="weight" data-model="medical.weight">
+            </div>
+            <div class="form-group">
+              <label for="nicotineUse">Tobacco/Nicotine use</label>
+              <select id="nicotineUse" data-model="medical.nicotine">
+                <option value="">Select</option>
+                <option>Never</option>
+                <option>Former</option>
+                <option>Current</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="pregnancy">Pregnancy status</label>
+              <input type="text" id="pregnancy" data-model="medical.pregnancy" placeholder="If applicable">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="medicalConditions">Current medical conditions</label>
+            <textarea id="medicalConditions" data-model="medical.conditions" maxlength="1000"></textarea>
+            <div class="character-counter" data-counter-for="medicalConditions"></div>
+          </div>
+
+          <h3>Current Prescription Medications</h3>
+          <p class="inline-muted">Add each medication that you currently take. Include indication and dosing details.</p>
+          <div id="rxList" class="dynamic-list" data-collection="medical.rx"></div>
+          <button type="button" class="btn-secondary" data-add="rx">Add medication</button>
+
+          <h3>OTC / Supplements</h3>
+          <div id="otcList" class="dynamic-list" data-collection="medical.otc"></div>
+          <button type="button" class="btn-secondary" data-add="otc">Add OTC or supplement</button>
+
+          <h3>Family health history</h3>
+          <div class="checkbox-grid">
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.diabetes" data-type="boolean"> Diabetes
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.tbi" data-type="boolean"> Traumatic brain injury
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.thyroid" data-type="boolean"> Thyroid disease
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.hiv" data-type="boolean"> HIV/AIDS
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.stroke" data-type="boolean"> Stroke
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.birth" data-type="boolean"> Birth defects
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.cancer" data-type="boolean"> Cancer
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.heart" data-type="boolean"> Heart disease
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.htn" data-type="boolean"> Hypertension
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.alz" data-type="boolean"> Alzheimer’s / Dementia
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="medical.family.seizure" data-type="boolean"> Seizure disorder
+            </label>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Step 4 -->
+      <section class="card" data-step="4" aria-labelledby="step4Title" hidden>
+        <h2 id="step4Title">Social History</h2>
+        <fieldset>
+          <legend class="visually-hidden">Social and lifestyle information</legend>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="educationLevel">Highest education level</label>
+              <input type="text" id="educationLevel" data-model="social.education">
+            </div>
+            <div class="form-group">
+              <label for="occupationStatus">Current occupation / employment status</label>
+              <input type="text" id="occupationStatus" data-model="social.occupation">
+            </div>
+            <div class="form-group">
+              <label for="livingSituation">Living situation</label>
+              <input type="text" id="livingSituation" data-model="social.living" placeholder="e.g., alone, with partner, with family">
+            </div>
+          </div>
+
+          <h3>Military service</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="militaryBranch">Branch</label>
+              <input type="text" id="militaryBranch" data-model="social.military.branch">
+            </div>
+            <div class="form-group">
+              <label for="militaryYears">Years served</label>
+              <input type="text" id="militaryYears" data-model="social.military.years">
+            </div>
+            <div class="form-group">
+              <label for="militaryDischarge">Discharge type</label>
+              <input type="text" id="militaryDischarge" data-model="social.military.discharge">
+            </div>
+          </div>
+
+          <h3>Children</h3>
+          <div id="childrenList" class="dynamic-list" data-collection="social.children"></div>
+          <button type="button" class="btn-secondary" data-add="child">Add child</button>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="partnerName">Significant other</label>
+              <input type="text" id="partnerName" data-model="social.partner.name" placeholder="Name">
+            </div>
+            <div class="form-group">
+              <label for="partnerContact">Partner contact information</label>
+              <input type="text" id="partnerContact" data-model="social.partner.contact">
+            </div>
+          </div>
+
+          <h3>Substance use</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="alcoholUse">Alcohol</label>
+              <textarea id="alcoholUse" data-model="social.substances.alcohol" maxlength="600" placeholder="Pattern, amount, frequency"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="prescriptionMisuse">Prescription misuse</label>
+              <textarea id="prescriptionMisuse" data-model="social.substances.rxMisuse" maxlength="600"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="recreationalDrugs">Recreational drugs</label>
+              <textarea id="recreationalDrugs" data-model="social.substances.recreational" maxlength="600" placeholder="Type(s), frequency"></textarea>
+            </div>
+          </div>
+
+          <h3>Substance screening</h3>
+          <div class="checkbox-grid">
+            <label class="inline-field"><input type="checkbox" data-model="social.cage.cut" data-type="boolean"> Felt the need to cut down</label>
+            <label class="inline-field"><input type="checkbox" data-model="social.cage.annoyed" data-type="boolean"> Annoyed by criticism about use</label>
+            <label class="inline-field"><input type="checkbox" data-model="social.cage.guilty" data-type="boolean"> Felt guilty about use</label>
+            <label class="inline-field"><input type="checkbox" data-model="social.cage.eyeOpener" data-type="boolean"> Needed a morning “eye-opener”</label>
+          </div>
+
+          <div class="form-group">
+            <label for="substanceTreatment">Substance treatment history</label>
+            <textarea id="substanceTreatment" data-model="social.treatmentHistory" maxlength="800" placeholder="When, where, outcomes"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="legalHistory">Legal history</label>
+            <textarea id="legalHistory" data-model="social.legal" maxlength="800" placeholder="Include arrests, probation, current charges if applicable"></textarea>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Step 5 -->
+      <section class="card" data-step="5" aria-labelledby="step5Title" hidden>
+        <h2 id="step5Title">Consent to Treatment &amp; Authorization</h2>
+        <div class="section-note">
+          Please read the summary below and complete the attestation at the end of this section.
+        </div>
+        <article>
+          <h3>What you are consenting to</h3>
+          <ul>
+            <li>You authorize clinicians with Lemke Michels Psychotherapy and Weber Behavioral Health to assess, diagnose, and provide psychotherapy. You may withdraw this consent at any time.</li>
+            <li>You acknowledge the limits of confidentiality: imminent risk of harm, suspected abuse or neglect, or valid court orders may require disclosure.</li>
+            <li>You allow Lemke Michels Psychotherapy and Weber Behavioral Health to release necessary information to your insurer for payment processing and understand you are responsible for fees not covered by your plan.</li>
+            <li>You authorize Lemke Michels Psychotherapy and Weber Behavioral Health to bill insurance benefits on your behalf and assign benefits directly to the practice.</li>
+          </ul>
+          <h3>Fee schedule</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="feeDiag">Diagnostic assessment</label>
+              <input type="text" id="feeDiag" data-model="consents.treatment.fees.diag" value="$275">
+            </div>
+            <div class="form-group">
+              <label for="feeSUE">Substance use evaluation</label>
+              <input type="text" id="feeSUE" data-model="consents.treatment.fees.sue" value="$325">
+            </div>
+            <div class="form-group">
+              <label for="feeIndividual">Individual therapy</label>
+              <input type="text" id="feeIndividual" data-model="consents.treatment.fees.individual" value="$150–$200">
+            </div>
+            <div class="form-group">
+              <label for="feeFamily">Family / Couples</label>
+              <input type="text" id="feeFamily" data-model="consents.treatment.fees.family" value="$200">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="consentTreatment" data-model="consents.treatment.agree" data-type="boolean" required>
+              <label for="consentTreatment">I have read and consent to treatment and authorization terms. <span class="inline-muted">(required)</span></label>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="consentTreatmentName">Typed full name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="consentTreatmentName" data-model="consents.treatment.name" required>
+            </div>
+            <div class="form-group">
+              <label for="consentTreatmentDate">Date <span class="inline-muted">(required)</span></label>
+              <input type="date" id="consentTreatmentDate" data-model="consents.treatment.date" required>
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Client Signature <span class="inline-muted">(required)</span></label>
+              <canvas id="signatureCanvas" width="400" height="150" style="border: 1px solid var(--border); border-radius: var(--radius-small); touch-action: none;"></canvas>
+              <div class="actions-group" style="margin-top: var(--space-xs);">
+                <button type="button" class="btn-secondary" id="clearSignatureBtn">Clear Signature</button>
+              </div>
+              <input type="hidden" id="signatureData" data-model="consents.treatment.signature" required>
+              <span class="error-text" id="signatureError" hidden></span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Step 6 -->
+      <section class="card" data-step="6" aria-labelledby="step6Title" hidden>
+        <h2 id="step6Title">Telehealth Consent</h2>
+        <article>
+          <p>
+            Telehealth visits use secure audio/video connections to deliver care when you are not in the office. You may choose in-person care whenever it is available. Both you and your clinician agree not to record telehealth sessions without written permission. Keep your environment private and let your clinician know your location and emergency contact at each session. If the connection drops, we will attempt to reconnect by your preferred method. For minors, a caregiver must be available within the home. Telehealth is not intended for emergencies; call 911 or go to the nearest emergency department if you are in immediate danger.
+          </p>
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="telehealthConsent" data-model="consents.telehealth.agree" data-type="boolean" required>
+              <label for="telehealthConsent">I consent to telehealth services. <span class="inline-muted">(required)</span></label>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="telehealthName">Typed full name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="telehealthName" data-model="consents.telehealth.name" required>
+            </div>
+            <div class="form-group">
+              <label for="telehealthDate">Date <span class="inline-muted">(required)</span></label>
+              <input type="date" id="telehealthDate" data-model="consents.telehealth.date" required>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Step 7 -->
+      <section class="card" data-step="7" aria-labelledby="step7Title" hidden>
+        <h2 id="step7Title">Communication Authorization</h2>
+        <fieldset>
+          <legend class="visually-hidden">Contact preferences</legend>
+          <p class="inline-muted">Select all acceptable ways for Lemke-Michels Psychotherapy &amp; Weber Behavioral Health to contact you about appointments, billing, and follow-up.</p>
+          <div class="checkbox-grid">
+            <label class="inline-field">
+              <input type="checkbox" data-model="consents.communications.phone" data-type="boolean">
+              Phone calls
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="consents.communications.text" data-type="boolean">
+              Text messages (SMS)
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="consents.communications.email" data-type="boolean">
+              Email
+            </label>
+            <label class="inline-field">
+              <input type="checkbox" data-model="consents.communications.voicemailOk" data-type="boolean">
+              OK to leave detailed voicemail
+            </label>
+          </div>
+
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="communicationConsent" data-model="consents.communications.agree" data-type="boolean" required>
+              <label for="communicationConsent">I authorize the communication methods selected above. <span class="inline-muted">(required)</span></label>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="communicationName">Typed full name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="communicationName" data-model="consents.communications.name" required>
+            </div>
+            <div class="form-group">
+              <label for="communicationDate">Date <span class="inline-muted">(required)</span></label>
+              <input type="date" id="communicationDate" data-model="consents.communications.date" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="under19" data-model="consents.communications.under19" data-type="boolean">
+              <label for="under19">Client is under 19; parent/guardian authorization required.</label>
+            </div>
+          </div>
+          <div class="form-grid" data-guardian-fields hidden>
+            <div class="form-group">
+              <label for="guardianConsentName">Parent/Guardian typed name</label>
+              <input type="text" id="guardianConsentName" data-model="consents.communications.guardian.name">
+            </div>
+            <div class="form-group">
+              <label for="guardianConsentDate">Date</label>
+              <input type="date" id="guardianConsentDate" data-model="consents.communications.guardian.date">
+            </div>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Step 8 -->
+      <section class="card" data-step="8" aria-labelledby="step8Title" hidden>
+        <h2 id="step8Title">Rights &amp; Responsibilities</h2>
+        <article>
+          <h3>Your Rights</h3>
+          <ul>
+            <li>Receive considerate, respectful care that honors your identity and values.</li>
+            <li>Participate in developing your treatment goals and request a change in provider.</li>
+            <li>Access your health information and request corrections consistent with law.</li>
+            <li>Know about costs, insurance coverage, and alternative options for care.</li>
+          </ul>
+          <h3>Your Responsibilities</h3>
+          <ul>
+            <li>Provide complete and accurate information so we can support you effectively.</li>
+            <li>Attend scheduled sessions or give at least 24 hours’ notice when you need to reschedule.</li>
+            <li>Work collaboratively toward the goals you set with your clinician.</li>
+            <li>Let us know if your contact information or insurance coverage changes.</li>
+          </ul>
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="rightsAck" data-model="consents.rights.ack" data-type="boolean" required>
+              <label for="rightsAck">I acknowledge reading my rights and responsibilities. <span class="inline-muted">(required)</span></label>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="rightsName">Typed full name <span class="inline-muted">(required)</span></label>
+              <input type="text" id="rightsName" data-model="consents.rights.name" required>
+            </div>
+            <div class="form-group">
+              <label for="rightsDate">Date <span class="inline-muted">(required)</span></label>
+              <input type="date" id="rightsDate" data-model="consents.rights.date" required>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Step 9 -->
+      <section class="card" data-step="9" aria-labelledby="step9Title" hidden>
+        <h2 id="step9Title">Release of Information (ROI)</h2>
+        <p class="inline-muted">
+          Use this section to authorize Lemke-Michels Psychotherapy &amp; Weber Behavioral Health to share or receive information with other parties. You may add up to three entries. Leave entries blank if not needed.
+        </p>
+        <div id="roiList" class="dynamic-list"></div>
+        <div class="inline-field">
+          <button type="button" class="btn-secondary" id="addRoiBtn">Add another ROI</button>
+          <small id="roiCounter" class="inline-muted"></small>
+        </div>
+      </section>
+
+      <!-- Step 10 -->
+      <section class="card" data-step="10" aria-labelledby="step10Title" hidden>
+        <h2 id="step10Title">Review &amp; Print</h2>
+        <p class="inline-muted">Review your answers below. Use “Edit section” to make changes. When ready, print or save your responses as a PDF.</p>
+        <div id="reviewOutput"></div>
+        <div class="actions-bar print-hidden" role="group" aria-label="Export actions">
+          <button type="button" class="btn-secondary" id="printBtn">Print / Save PDF</button>
+          <button type="button" class="btn-secondary" id="emailBtn">Email Summary</button>
+        </div>
+      </section>
+
+      <nav class="form-nav print-hidden">
+        <button type="button" class="btn-secondary" id="backBtn" aria-label="Previous step">Back</button>
+        <button type="button" class="btn-primary" id="nextBtn" aria-label="Next step">Next</button>
+      </nav>
+    </form>
+    <section id="printSnapshot" class="print-summary" aria-hidden="true"></section>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Reminder: This intake stays in your browser only. Print or save a PDF before closing to keep a record.</p>
+    <p style="font-size: 0.9rem; color: #666; margin-top: 8px;">🔐 <strong>Encryption Enabled:</strong> Your sensitive information (names, phone numbers, emails, addresses, insurance details) is encrypted using XSalsa20-Poly1305. Only you know the passphrase to decrypt it.</p>
+  </footer>
+
+  <script>
+    // ============================================
+    // ENCRYPTION UTILITY MODULE
+    // ============================================
+    class EncryptionManager {
+      constructor() {
+        this.keyPair = null;
+        this.encryptionEnabled = true;
+      }
+
+      /**
+       * Initialize encryption with a master key derived from a passphrase
+       * Uses PBKDF2 for key derivation and XSalsa20-Poly1305 for encryption
+       */
+      async initializeWithPassphrase(passphrase) {
+        try {
+          // Generate a random salt for this session
+          this.salt = nacl.randomBytes(16);
+
+          // Derive a key from the passphrase using PBKDF2
+          const encoder = new TextEncoder();
+          const passphraseBuffer = encoder.encode(passphrase);
+          const saltBuffer = this.salt;
+
+          // Use subtle crypto for PBKDF2
+          const derivedKey = await crypto.subtle.deriveBits(
+            {
+              name: "PBKDF2",
+              salt: saltBuffer,
+              iterations: 100000,
+              hash: "SHA-256"
+            },
+            await crypto.subtle.importKey("raw", passphraseBuffer, "PBKDF2", false, ["deriveBits"]),
+            256
+          );
+
+          this.encryptionKey = new Uint8Array(derivedKey);
+          return true;
+        } catch (error) {
+          console.error("Encryption initialization failed:", error);
+          this.encryptionEnabled = false;
+          return false;
+        }
+      }
+
+      /**
+       * Encrypt sensitive data fields in an object
+       */
+      encryptObject(data, fieldsToEncrypt) {
+        if (!this.encryptionEnabled || !this.encryptionKey) {
+          return data;
+        }
+
+        const encrypted = JSON.parse(JSON.stringify(data));
+
+        const encryptField = (obj, fieldPath) => {
+          const parts = fieldPath.split(".");
+          let current = obj;
+
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!current[parts[i]]) return;
+            current = current[parts[i]];
+          }
+
+          const lastKey = parts[parts.length - 1];
+          if (current[lastKey] && typeof current[lastKey] === "string" && current[lastKey].trim()) {
+            current[lastKey] = this.encryptString(current[lastKey]);
+          }
+        };
+
+        fieldsToEncrypt.forEach(field => encryptField(encrypted, field));
+        return encrypted;
+      }
+
+      /**
+       * Encrypt a single string value
+       */
+      encryptString(plaintext) {
+        if (!this.encryptionKey) return plaintext;
+
+        try {
+          const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+          const messageUint8 = new TextEncoder().encode(plaintext);
+          const encrypted = nacl.secretbox(messageUint8, nonce, this.encryptionKey);
+
+          // Combine nonce + encrypted data and encode as base64
+          const full = new Uint8Array(nonce.length + encrypted.length);
+          full.set(nonce);
+          full.set(encrypted, nonce.length);
+
+          return "ENC:" + nacl.util.encodeBase64(full);
+        } catch (error) {
+          console.error("Encryption failed:", error);
+          return plaintext;
+        }
+      }
+
+      /**
+       * Decrypt a single encrypted string
+       */
+      decryptString(ciphertext) {
+        if (!this.encryptionKey || !ciphertext.startsWith("ENC:")) return ciphertext;
+
+        try {
+          const full = nacl.util.decodeBase64(ciphertext.substring(4));
+          const nonce = full.slice(0, nacl.secretbox.nonceLength);
+          const encrypted = full.slice(nacl.secretbox.nonceLength);
+
+          const decrypted = nacl.secretbox.open(encrypted, nonce, this.encryptionKey);
+          if (!decrypted) return ciphertext;
+
+          return new TextDecoder().decode(decrypted);
+        } catch (error) {
+          console.error("Decryption failed:", error);
+          return ciphertext;
+        }
+      }
+
+      /**
+       * Decrypt an object with encrypted fields
+       */
+      decryptObject(data, fieldsToDecrypt) {
+        if (!this.encryptionEnabled || !this.encryptionKey) {
+          return data;
+        }
+
+        const decrypted = JSON.parse(JSON.stringify(data));
+
+        const decryptField = (obj, fieldPath) => {
+          const parts = fieldPath.split(".");
+          let current = obj;
+
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!current[parts[i]]) return;
+            current = current[parts[i]];
+          }
+
+          const lastKey = parts[parts.length - 1];
+          if (current[lastKey] && typeof current[lastKey] === "string") {
+            current[lastKey] = this.decryptString(current[lastKey]);
+          }
+        };
+
+        fieldsToDecrypt.forEach(field => decryptField(decrypted, field));
+        return decrypted;
+      }
+    }
+
+    // Initialize encryption manager
+    const encryptor = new EncryptionManager();
+
+    // Define sensitive fields that should be encrypted
+    const SENSITIVE_FIELDS = [
+      "intake.nameLegal",
+      "intake.namePreferred",
+      "intake.dob",
+      "intake.address.street",
+      "intake.address.city",
+      "intake.address.state",
+      "intake.address.zip",
+      "intake.phone",
+      "intake.email",
+      "intake.employer",
+      "intake.emergency.name",
+      "intake.emergency.phone",
+      "intake.minor.guardianName",
+      "intake.minor.phone",
+      "intake.minor.email",
+      "intake.pcp.name",
+      "intake.pcp.clinic",
+      "intake.pcp.phone",
+      "intake.pharmacy.name",
+      "insurance.primary.memberId",
+      "insurance.primary.group",
+      "insurance.primary.subscriberName",
+      "insurance.primary.subscriberDob",
+      "insurance.secondary.memberId",
+      "insurance.secondary.group",
+      "insurance.secondary.subscriberName",
+      "insurance.secondary.subscriberDob",
+      "medical.conditions",
+      "social.partner.name",
+      "social.partner.contact",
+      "consents.treatment.name",
+      "consents.telehealth.name",
+      "consents.communications.name",
+      "consents.communications.guardian.name",
+      "consents.rights.name"
+    ];
+
+    // In-memory state only
+    const formState = {
+      step: 1,
+      intake: {
+        nameLegal: "",
+        namePreferred: "",
+        pronouns: "",
+        dob: "",
+        relationship: "",
+        address: { street: "", city: "", state: "", zip: "" },
+        phone: "",
+        phoneConsent: false,
+        email: "",
+        emailConsent: false,
+        reminder: "",
+        employer: "",
+        emergency: { name: "", relation: "", phone: "" },
+        referral: "",
+        minor: { guardianName: "", relation: "", phone: "", email: "" },
+        school: { name: "", grade: "" },
+        pcp: { name: "", clinic: "", phone: "" },
+        pharmacy: { name: "", city: "" },
+        allergies: ""
+      },
+      insurance: {
+        primary: { carrier: "", memberId: "", group: "", subscriberName: "", subscriberDob: "" },
+        secondary: { carrier: "", memberId: "", group: "", subscriberName: "", subscriberDob: "" },
+        reason: "",
+        sleep: "",
+        diet: "",
+        activity: "",
+        stressors: [],
+        supports: [],
+        psychHistory: { summary: "" },
+        safety: {
+          siEver: false,
+          si30: false,
+          selfHarmEver: false,
+          selfHarm30: false,
+          attempt: false,
+          violence: false,
+          means: false,
+          concerns: ""
+        }
+      },
+      medical: {
+        height: "",
+        weight: "",
+        nicotine: "",
+        pregnancy: "",
+        conditions: "",
+        rx: [],
+        otc: [],
+        family: {
+          diabetes: false,
+          tbi: false,
+          thyroid: false,
+          hiv: false,
+          stroke: false,
+          birth: false,
+          cancer: false,
+          heart: false,
+          htn: false,
+          alz: false,
+          seizure: false
+        }
+      },
+      social: {
+        education: "",
+        occupation: "",
+        living: "",
+        military: { branch: "", years: "", discharge: "" },
+        children: [],
+        partner: { name: "", contact: "" },
+        substances: { alcohol: "", rxMisuse: "", recreational: "" },
+        cage: { cut: false, annoyed: false, guilty: false, eyeOpener: false },
+        treatmentHistory: "",
+        legal: ""
+      },
+      consents: {
+        treatment: {
+          agree: false,
+          name: "",
+          date: "",
+          fees: { diag: "$275", sue: "$325", individual: "$150–$200", family: "$200" },
+          signature: ""
+        },
+        telehealth: { agree: false, name: "", date: "" },
+        communications: {
+          phone: false,
+          text: false,
+          email: false,
+          voicemailOk: false,
+          agree: false,
+          name: "",
+          date: "",
+          under19: false,
+          guardian: { name: "", date: "" }
+        },
+        rights: { ack: false, name: "", date: "" }
+      },
+      roi: [
+        createEmptyRoi()
+      ]
+    };
+
+    function createEmptyRoi() {
+      const today = new Date();
+      const expires = new Date(today);
+      expires.setFullYear(today.getFullYear() + 1);
+      return {
+        direction: "Both",
+        recipient: "",
+        address: "",
+        city: "",
+        state: "",
+        zip: "",
+        phone: "",
+        email: "",
+        fax: "",
+        methods: { Mail: false, Fax: false, "Secure Email": false, Verbal: false },
+        info: {
+          "Intake Note": false,
+          "Progress Notes": false,
+          "School Records": false,
+          "History & Physical": false,
+          Consultations: false,
+          "Medication List": false,
+          EKG: false,
+          Labs: false,
+          "Sleep Study": false,
+          "Case History": false,
+          "Court Reports": false,
+          "Psychological Evaluation": false,
+          Other: false,
+          otherText: ""
+        },
+        purpose: {
+          "Continuity of Care": false,
+          "Transfer of Care": false,
+          Legal: false,
+          "Billing/Claims": false,
+          Other: false,
+          otherText: ""
+        },
+        sensitiveAck: false,
+        expires: expires.toISOString().split("T")[0],
+        signatures: { client: "", witness: "", dateClient: "", dateWitness: "" }
+      };
+    }
+
+    const clone = (obj) =>
+      typeof structuredClone === "function"
+        ? structuredClone(obj)
+        : JSON.parse(JSON.stringify(obj));
+
+    const initialState = clone(formState);
+
+    function resetFormState() {
+      const fresh = clone(initialState);
+      Object.keys(formState).forEach((key) => {
+        formState[key] = fresh[key];
+      });
+      hasUnsavedChanges = false;
+      completionNotified = false;
+      form.reset();
+      rehydrateForm();
+      goToStep(1);
+      validateCurrentStep();
+    }
+    const totalSteps = 10;
+    const form = document.getElementById("intakeForm");
+    const sections = Array.from(form.querySelectorAll("[data-step]"));
+    const progressBar = document.getElementById("progressBar").querySelector("span");
+    const progressEl = document.getElementById("progressBar");
+    const stepCounter = document.getElementById("stepCounter");
+    const backBtn = document.getElementById("backBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const errorSummary = document.getElementById("errorSummary");
+    const errorList = document.getElementById("errorList");
+    const printBtn = document.getElementById("printBtn");
+    const modal = document.getElementById("privacyModal");
+    const modalCheckbox = document.getElementById("privacyAcknowledge");
+    const modalContinueBtn = document.getElementById("modalContinueBtn");
+    const modalExitBtn = document.getElementById("modalExitBtn");
+    const quickPrintBtn = document.getElementById("quickPrintBtn");
+    const emailBtn = document.getElementById("emailBtn");
+    const clearAllBtn = document.getElementById("clearAllBtn");
+    const roiList = document.getElementById("roiList");
+    const addRoiBtn = document.getElementById("addRoiBtn");
+    const roiCounter = document.getElementById("roiCounter");
+
+    let currentStep = 1;
+    let hasUnsavedChanges = false;
+    let completionNotified = false;
+
+    /* Utilities */
+    const setValueAtPath = (obj, path, value) => {
+      const segments = path.split(".");
+      let ref = obj;
+      segments.forEach((key, index) => {
+        if (index === segments.length - 1) {
+          ref[key] = value;
+        } else {
+          if (!ref[key]) ref[key] = {};
+          ref = ref[key];
+        }
+      });
+    };
+
+    const getValueAtPath = (obj, path) => {
+      return path.split(".").reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+    };
+
+    const markDirty = () => {
+      hasUnsavedChanges = true;
+    };
+
+    window.addEventListener("beforeunload", (event) => {
+      if (hasUnsavedChanges) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+
+    /* Modal handling */
+    modalCheckbox.addEventListener("change", () => {
+      modalContinueBtn.disabled = !modalCheckbox.checked;
+    });
+
+    modalContinueBtn.addEventListener("click", () => {
+      modal.remove();
+      modalCheckbox.setAttribute("disabled", "disabled");
+      goToStep(1);
+      document.getElementById("legalName").focus();
+    });
+
+    modalExitBtn.addEventListener("click", () => {
+      window.location.href = "about:blank";
+    });
+
+    /* Character counters */
+    document.querySelectorAll("[data-counter-for]").forEach((counter) => {
+      const target = document.getElementById(counter.dataset.counterFor);
+      if (!target) return;
+      const update = () => {
+        counter.textContent = `${target.value.length}/${target.getAttribute("maxlength")} characters`;
+      };
+      target.addEventListener("input", update);
+      update();
+    });
+
+    /* Chip inputs */
+    const chipInputs = document.querySelectorAll(".chip-input");
+    chipInputs.forEach((container) => {
+      const input = container.querySelector("input[type='text']");
+      const list = container.querySelector(".chip-list");
+      const path = container.dataset.chipTarget;
+      const render = () => {
+        list.innerHTML = "";
+        const items = getValueAtPath(formState, path) || [];
+        items.forEach((item, index) => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          const chipText = document.createElement("span");
+          chipText.textContent = item;
+          chip.appendChild(chipText);
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.setAttribute("aria-label", `Remove ${item}`);
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", () => {
+            const updated = [...items];
+            updated.splice(index, 1);
+            setValueAtPath(formState, path, updated);
+            markDirty();
+            render();
+            validateCurrentStep();
+          });
+          chip.appendChild(removeBtn);
+          list.appendChild(chip);
+        });
+      };
+
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && input.value.trim()) {
+          event.preventDefault();
+          const items = getValueAtPath(formState, path) || [];
+          if (items.length >= 12) {
+            input.setCustomValidity("You can list up to 12 items.");
+            input.reportValidity();
+            setTimeout(() => input.setCustomValidity(""), 2000);
+            return;
+          }
+          items.push(input.value.trim());
+          setValueAtPath(formState, path, items);
+          input.value = "";
+          markDirty();
+          render();
+          validateCurrentStep();
+        }
+      });
+      render();
+    });
+
+    const escapeHtml = (value = "") =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    /* Dynamic lists */
+    const dynamicHandlers = {
+      rx: {
+        listId: "rxList",
+        createItem: () => ({
+          medication: "",
+          indication: "",
+          dose: "",
+          frequency: "",
+          provider: ""
+        }),
+        template: (item, index) => `
+          <header>
+            <h3>Medication ${index + 1}</h3>
+            <button type="button" data-remove="rx" data-index="${index}">Remove</button>
+          </header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Medication</label>
+              <input type="text" data-collection-path="medication" value="${escapeHtml(item.medication)}">
+            </div>
+            <div class="form-group">
+              <label>Indication</label>
+              <input type="text" data-collection-path="indication" value="${escapeHtml(item.indication)}">
+            </div>
+            <div class="form-group">
+              <label>Dose</label>
+              <input type="text" data-collection-path="dose" value="${escapeHtml(item.dose)}">
+            </div>
+            <div class="form-group">
+              <label>Frequency</label>
+              <input type="text" data-collection-path="frequency" value="${escapeHtml(item.frequency)}">
+            </div>
+            <div class="form-group">
+              <label>Prescribing provider</label>
+              <input type="text" data-collection-path="provider" value="${escapeHtml(item.provider)}">
+            </div>
+          </div>
+        `
+      },
+      otc: {
+        listId: "otcList",
+        createItem: () => ({
+          name: "",
+          purpose: "",
+          dose: "",
+          frequency: ""
+        }),
+        template: (item, index) => `
+          <header>
+            <h3>OTC / Supplement ${index + 1}</h3>
+            <button type="button" data-remove="otc" data-index="${index}">Remove</button>
+          </header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" data-collection-path="name" value="${escapeHtml(item.name)}">
+            </div>
+            <div class="form-group">
+              <label>Purpose</label>
+              <input type="text" data-collection-path="purpose" value="${escapeHtml(item.purpose)}">
+            </div>
+            <div class="form-group">
+              <label>Dose</label>
+              <input type="text" data-collection-path="dose" value="${escapeHtml(item.dose)}">
+            </div>
+            <div class="form-group">
+              <label>Frequency</label>
+              <input type="text" data-collection-path="frequency" value="${escapeHtml(item.frequency)}">
+            </div>
+          </div>
+        `
+      },
+      child: {
+        listId: "childrenList",
+        createItem: () => ({ name: "", age: "" }),
+        template: (item, index) => `
+          <header>
+            <h3>Child ${index + 1}</h3>
+            <button type="button" data-remove="child" data-index="${index}">Remove</button>
+          </header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" data-collection-path="name" value="${escapeHtml(item.name)}">
+            </div>
+            <div class="form-group">
+              <label>Age</label>
+              <input type="text" data-collection-path="age" value="${escapeHtml(item.age)}">
+            </div>
+          </div>
+        `
+      }
+    };
+
+    Object.entries(dynamicHandlers).forEach(([key, handler]) => {
+      const listEl = document.getElementById(handler.listId);
+      const addButton = document.querySelector(`[data-add="${key}"]`);
+
+      const render = () => {
+        const collection = getValueAtPath(formState, listEl.dataset.collection || handler.listId.replace("List", "")) || [];
+        listEl.innerHTML = "";
+        collection.forEach((item, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "dynamic-item";
+          wrapper.innerHTML = handler.template(item, index);
+          wrapper.querySelectorAll("input, textarea, select").forEach((input) => {
+            input.addEventListener("input", () => {
+              collection[index][input.dataset.collectionPath] = input.value;
+              markDirty();
+              validateCurrentStep();
+            });
+          });
+          const removeBtn = wrapper.querySelector("[data-remove]");
+          removeBtn.addEventListener("click", () => {
+            collection.splice(index, 1);
+            setValueAtPath(formState, listEl.dataset.collection, collection);
+            markDirty();
+            render();
+            validateCurrentStep();
+          });
+          listEl.appendChild(wrapper);
+        });
+      };
+
+      if (!getValueAtPath(formState, handler.listId === "rxList" ? "medical.rx" : handler.listId === "otcList" ? "medical.otc" : "social.children")) {
+        setValueAtPath(formState, listEl.dataset.collection, []);
+      }
+
+      addButton.addEventListener("click", () => {
+        const collectionPath = listEl.dataset.collection;
+        const collection = getValueAtPath(formState, collectionPath);
+        collection.push(handler.createItem());
+        setValueAtPath(formState, collectionPath, collection);
+        markDirty();
+        render();
+      });
+
+      render();
+    });
+
+    /* ROI handling */
+    const renderRoi = () => {
+      roiList.innerHTML = "";
+      formState.roi.forEach((entry, index) => {
+        const section = document.createElement("section");
+        section.className = "dynamic-item";
+        section.innerHTML = `
+          <header>
+            <h3>Release ${index + 1}</h3>
+            <button type="button" ${formState.roi.length === 1 ? "disabled" : ""} data-roi-remove="${index}">Remove</button>
+          </header>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="roiDirection-${index}">Direction</label>
+              <select id="roiDirection-${index}" data-roi-field="direction">
+                <option ${entry.direction === "Provide" ? "selected" : ""}>Provide</option>
+                <option ${entry.direction === "Receive" ? "selected" : ""}>Receive</option>
+                <option ${entry.direction === "Both" ? "selected" : ""}>Both</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label for="roiRecipient-${index}">Recipient (Name/Organization) <span class="inline-muted">(required)</span></label>
+              <input type="text" id="roiRecipient-${index}" data-roi-field="recipient" value="${escapeHtml(entry.recipient)}" required>
+            </div>
+            <div class="form-group">
+              <label for="roiAddress-${index}">Address</label>
+              <input type="text" id="roiAddress-${index}" data-roi-field="address" value="${escapeHtml(entry.address)}">
+            </div>
+            <div class="form-group">
+              <label for="roiCity-${index}">City</label>
+              <input type="text" id="roiCity-${index}" data-roi-field="city" value="${escapeHtml(entry.city)}">
+            </div>
+            <div class="form-group">
+              <label for="roiState-${index}">State</label>
+              <input type="text" id="roiState-${index}" data-roi-field="state" value="${escapeHtml(entry.state)}">
+            </div>
+            <div class="form-group">
+              <label for="roiZip-${index}">ZIP</label>
+              <input type="text" id="roiZip-${index}" data-roi-field="zip" value="${escapeHtml(entry.zip)}">
+            </div>
+            <div class="form-group">
+              <label for="roiPhone-${index}">Phone</label>
+              <input type="tel" id="roiPhone-${index}" data-roi-field="phone" value="${escapeHtml(entry.phone)}">
+            </div>
+            <div class="form-group">
+              <label for="roiEmail-${index}">Email</label>
+              <input type="email" id="roiEmail-${index}" data-roi-field="email" value="${escapeHtml(entry.email)}">
+            </div>
+            <div class="form-group">
+              <label for="roiFax-${index}">Fax</label>
+              <input type="text" id="roiFax-${index}" data-roi-field="fax" value="${escapeHtml(entry.fax)}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Send method</label>
+            <div class="checkbox-grid">
+              ${Object.keys(entry.methods).map((method) => `
+                <label class="inline-field">
+                  <input type="checkbox" data-roi-method="${method}" ${entry.methods[method] ? "checked" : ""}>
+                  ${method}
+                </label>
+              `).join("")}
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Information requested</label>
+            <div class="checkbox-grid">
+              ${Object.entries(entry.info).map(([key, value]) => {
+                if (key === "otherText") return "";
+                return `
+                  <label class="inline-field">
+                    <input type="checkbox" data-roi-info="${key}" ${value ? "checked" : ""}>
+                    ${key}
+                  </label>
+                `;
+              }).join("")}
+            </div>
+            <div class="form-group" data-show-when="info-other" ${entry.info.Other ? "" : "hidden"}>
+              <label for="roiInfoOther-${index}">Other information</label>
+              <input type="text" id="roiInfoOther-${index}" data-roi-info-text="otherText" value="${escapeHtml(entry.info.otherText || "")}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Purpose of release</label>
+            <div class="checkbox-grid">
+              ${Object.entries(entry.purpose).map(([key, value]) => {
+                if (key === "otherText") return "";
+                return `
+                  <label class="inline-field">
+                    <input type="checkbox" data-roi-purpose="${key}" ${value ? "checked" : ""}>
+                    ${key}
+                  </label>
+                `;
+              }).join("")}
+            </div>
+            <div class="form-group" data-show-when="purpose-other" ${entry.purpose.Other ? "" : "hidden"}>
+              <label for="roiPurposeOther-${index}">Other purpose</label>
+              <input type="text" id="roiPurposeOther-${index}" data-roi-purpose-text="otherText" value="${escapeHtml(entry.purpose.otherText || "")}">
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="inline-field">
+              <input type="checkbox" id="roiSensitive-${index}" data-roi-field="sensitiveAck" ${entry.sensitiveAck ? "checked" : ""}>
+              <label for="roiSensitive-${index}">Include sensitive mental health and substance use information.</label>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="roiExpires-${index}">Expiration date</label>
+              <input type="date" id="roiExpires-${index}" data-roi-field="expires" value="${escapeHtml(entry.expires)}">
+            </div>
+            <div class="form-group">
+              <label for="roiClientName-${index}">Client/Guardian signature (typed name)</label>
+              <input type="text" id="roiClientName-${index}" data-roi-signature="client" value="${escapeHtml(entry.signatures.client)}">
+            </div>
+            <div class="form-group">
+              <label for="roiClientDate-${index}">Client/Guardian date</label>
+              <input type="date" id="roiClientDate-${index}" data-roi-signature="dateClient" value="${escapeHtml(entry.signatures.dateClient)}">
+            </div>
+            <div class="form-group">
+              <label for="roiWitness-${index}">Witness name</label>
+              <input type="text" id="roiWitness-${index}" data-roi-signature="witness" value="${escapeHtml(entry.signatures.witness)}">
+            </div>
+            <div class="form-group">
+              <label for="roiWitnessDate-${index}">Witness date</label>
+              <input type="date" id="roiWitnessDate-${index}" data-roi-signature="dateWitness" value="${escapeHtml(entry.signatures.dateWitness)}">
+            </div>
+          </div>
+          <p class="inline-muted">You may revoke this release at any time by notifying Lemke-Michels Psychotherapy &amp; Weber Behavioral Health in writing before the expiration date.</p>
+        `;
+
+        section.querySelectorAll("[data-roi-field]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const field = input.dataset.roiField;
+            if (input.type === "checkbox") {
+              formState.roi[index][field] = input.checked;
+            } else {
+              formState.roi[index][field] = input.value;
+            }
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-method]").forEach((input) => {
+          input.addEventListener("change", () => {
+            const method = input.dataset.roiMethod;
+            formState.roi[index].methods[method] = input.checked;
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-info]").forEach((input) => {
+          input.addEventListener("change", () => {
+            const info = input.dataset.roiInfo;
+            formState.roi[index].info[info] = input.checked;
+            const otherInfoGroup = section.querySelector("[data-show-when='info-other']");
+            if (info === "Other") {
+              if (input.checked) {
+                otherInfoGroup.hidden = false;
+              } else {
+                otherInfoGroup.hidden = true;
+                formState.roi[index].info.otherText = "";
+                section.querySelector("[data-roi-info-text='otherText']").value = "";
+              }
+            }
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-info-text]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const field = input.dataset.roiInfoText;
+            formState.roi[index].info[field] = input.value;
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-purpose]").forEach((input) => {
+          input.addEventListener("change", () => {
+            const purpose = input.dataset.roiPurpose;
+            formState.roi[index].purpose[purpose] = input.checked;
+            const otherPurposeGroup = section.querySelector("[data-show-when='purpose-other']");
+            if (purpose === "Other") {
+              if (input.checked) {
+                otherPurposeGroup.hidden = false;
+              }
+              else {
+                otherPurposeGroup.hidden = true;
+                formState.roi[index].purpose.otherText = "";
+                section.querySelector("[data-roi-purpose-text='otherText']").value = "";
+              }
+            }
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-purpose-text]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const field = input.dataset.roiPurposeText;
+            formState.roi[index].purpose[field] = input.value;
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        section.querySelectorAll("[data-roi-signature]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const field = input.dataset.roiSignature;
+            formState.roi[index].signatures[field] = input.value;
+            markDirty();
+            validateCurrentStep();
+          });
+        });
+
+        const removeBtn = section.querySelector("[data-roi-remove]");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", () => {
+            formState.roi.splice(index, 1);
+            markDirty();
+            renderRoi();
+            validateCurrentStep();
+          });
+        }
+        roiList.appendChild(section);
+      });
+      roiCounter.textContent = `${formState.roi.length} of 3 ROI forms`;
+      addRoiBtn.disabled = formState.roi.length >= 3;
+    };
+
+    addRoiBtn.addEventListener("click", () => {
+      if (formState.roi.length < 3) {
+        formState.roi.push(createEmptyRoi());
+        markDirty();
+        renderRoi();
+        validateCurrentStep();
+      }
+    });
+
+    renderRoi();
+
+    /* Signature Pad */
+    const signatureCanvas = document.getElementById("signatureCanvas");
+    const signatureDataInput = document.getElementById("signatureData");
+    const clearSignatureBtn = document.getElementById("clearSignatureBtn");
+    const signatureError = document.getElementById("signatureError");
+
+    if (signatureCanvas) {
+      const ctx = signatureCanvas.getContext("2d");
+      let drawing = false;
+
+      function resizeCanvas() {
+        const rect = signatureCanvas.getBoundingClientRect();
+        signatureCanvas.width = rect.width;
+        signatureCanvas.height = rect.height;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "#000";
+        // Redraw existing signature if any
+        if (formState.consents.treatment.signature) {
+          const img = new Image();
+          img.onload = () => {
+            ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            ctx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
+          };
+          img.src = formState.consents.treatment.signature;
+        }
+      }
+
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas(); // Initial resize
+
+      function startDrawing(e) {
+        drawing = true;
+        draw(e);
+      }
+
+      function stopDrawing() {
+        drawing = false;
+        ctx.beginPath();
+        saveSignature();
+        validateCurrentStep();
+      }
+
+      function draw(e) {
+        if (!drawing) return;
+        const rect = signatureCanvas.getBoundingClientRect();
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      }
+
+      signatureCanvas.addEventListener("mousedown", startDrawing);
+      signatureCanvas.addEventListener("mouseup", stopDrawing);
+      signatureCanvas.addEventListener("mouseout", stopDrawing);
+      signatureCanvas.addEventListener("mousemove", draw);
+
+      signatureCanvas.addEventListener("touchstart", (e) => {
+        e.preventDefault(); // Prevent scrolling
+        startDrawing(e);
+      });
+      signatureCanvas.addEventListener("touchend", stopDrawing);
+      signatureCanvas.addEventListener("touchcancel", stopDrawing);
+      signatureCanvas.addEventListener("touchmove", (e) => {
+        e.preventDefault(); // Prevent scrolling
+        draw(e);
+      });
+
+      clearSignatureBtn.addEventListener("click", () => {
+        ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+        formState.consents.treatment.signature = "";
+        signatureDataInput.value = "";
+        markDirty();
+        validateCurrentStep();
+      });
+
+      function saveSignature() {
+        formState.consents.treatment.signature = signatureCanvas.toDataURL();
+        signatureDataInput.value = signatureCanvas.toDataURL();
+        markDirty();
+      }
+
+      // Update canvas when formState changes (e.g., rehydration)
+      const originalRehydrateForm = rehydrateForm;
+      rehydrateForm = () => {
+        originalRehydrateForm();
+        if (formState.consents.treatment.signature && signatureCanvas) {
+          const img = new Image();
+          img.onload = () => {
+            ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            ctx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
+          };
+          img.src = formState.consents.treatment.signature;
+          signatureDataInput.value = formState.consents.treatment.signature;
+        } else if (signatureCanvas) {
+          ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+          signatureDataInput.value = "";
+        }
+      };
+    }
+
+    /* Form navigation */
+    const guardianFields = document.querySelector("[data-guardian-fields]");
+    const under19Checkbox = document.getElementById("under19");
+    under19Checkbox.addEventListener("change", () => {
+      guardianFields.hidden = !under19Checkbox.checked;
+      setValueAtPath(formState, "consents.communications.under19", under19Checkbox.checked);
+      markDirty();
+      validateCurrentStep();
+    });
+
+    /* Generic binding for data-model inputs */
+    form.querySelectorAll("[data-model]").forEach((input) => {
+      const path = input.dataset.model;
+      const value = getValueAtPath(formState, path);
+      if (input.type === "checkbox") {
+        input.checked = Boolean(value);
+      } else {
+        input.value = value || "";
+      }
+      input.addEventListener("input", () => {
+        if (input.type === "checkbox") {
+          setValueAtPath(formState, path, input.checked);
+        } else {
+          let valueToStore = input.value;
+
+          // Encrypt sensitive fields before storing
+          if (SENSITIVE_FIELDS.includes(path) && encryptor.encryptionEnabled && valueToStore.trim()) {
+            valueToStore = encryptor.encryptString(valueToStore);
+          }
+
+          setValueAtPath(formState, path, valueToStore);
+        }
+        markDirty();
+        validateCurrentStep();
+      });
+      if (input.type === "checkbox") {
+        input.addEventListener("change", () => {
+          setValueAtPath(formState, path, input.checked);
+          markDirty();
+          validateCurrentStep();
+        });
+      }
+    });
+
+    /* Step navigation */
+    backBtn.addEventListener("click", () => {
+      if (currentStep > 1) {
+        goToStep(currentStep - 1);
+      }
+    });
+
+    nextBtn.addEventListener("click", () => {
+      if (!validateCurrentStep(true)) {
+        return;
+      }
+      if (currentStep < totalSteps) {
+        goToStep(currentStep + 1);
+      } else {
+        renderReview();
+        if (!completionNotified) {
+          alert("You are on the final step. Review your entries and use the print options to keep a copy before you leave this page.");
+          completionNotified = true;
+        }
+      }
+    });
+
+    const goToStep = (step) => {
+      currentStep = step;
+      if (step < totalSteps) {
+        completionNotified = false;
+      }
+      window.location.hash = `#step-${step}`;
+      sections.forEach((section) => {
+        const targetStep = Number(section.dataset.step);
+        section.hidden = targetStep !== step;
+        if (!section.hidden) {
+          setTimeout(() => {
+            const firstField = section.querySelector("input, select, textarea, button");
+            if (firstField) firstField.focus({ preventScroll: true });
+          }, 50);
+        }
+      });
+      backBtn.disabled = step === 1;
+      nextBtn.textContent = step === totalSteps ? "Finish" : "Next";
+      stepCounter.textContent = `Step ${step} of ${totalSteps}`;
+      progressEl.setAttribute("aria-valuenow", String(step));
+      progressBar.style.width = `${(step / totalSteps) * 100}%`;
+      renderReview();
+      validateCurrentStep();
+    };
+
+    window.addEventListener("hashchange", () => {
+      const match = window.location.hash.match(/step-(\\d+)/);
+      if (match) {
+        goToStep(Math.max(1, Math.min(totalSteps, Number(match[1]))));
+      }
+    });
+
+    /* Validation */
+    const requiredSelectors = {
+      1: ["#legalName", "#dob", "#phone", "#email", "#emergencyName", "#emergencyRelation", "#emergencyPhone"],
+      2: ["#reasonSeeking"],
+      5: ["#consentTreatment", "#consentTreatmentName", "#consentTreatmentDate"],
+      6: ["#telehealthConsent", "#telehealthName", "#telehealthDate"],
+      7: ["#communicationConsent", "#communicationName", "#communicationDate"],
+      8: ["#rightsAck", "#rightsName", "#rightsDate"],
+      9: [], // custom validation below
+      10: [] // review only
+    };
+
+    function validateCurrentStep(showSummary = false) {
+      let isValid = true;
+      let firstInvalidField = null;
+      const section = sections.find((sec) => Number(sec.dataset.step) === currentStep);
+      if (!section) return true;
+
+      const requiredFields = requiredSelectors[currentStep] || [];
+      const invalidFields = [];
+
+      requiredFields.forEach((selector) => {
+        const field = document.querySelector(selector);
+        if (!field) return;
+        if (field.type === "checkbox") {
+          if (!field.checked) {
+            field.setAttribute("aria-invalid", "true");
+            invalidFields.push({ field, message: "Please complete this required checkbox." });
+            if (firstInvalidField === null) firstInvalidField = field;
+            isValid = false;
+          } else {
+            field.removeAttribute("aria-invalid");
+          }
+        } else if (!field.value.trim()) {
+          field.setAttribute("aria-invalid", "true");
+          invalidFields.push({ field, message: "This field is required." });
+          if (firstInvalidField === null) firstInvalidField = field;
+          isValid = false;
+        } else {
+          field.removeAttribute("aria-invalid");
+        }
+      });
+
+      if (currentStep === 9) {
+        formState.roi.forEach((entry, index) => {
+          if (!entry.recipient.trim()) {
+            const input = document.getElementById(`roiRecipient-${index}`);
+            input.setAttribute("aria-invalid", "true");
+            invalidFields.push({
+              field: input,
+              message: "Each release must include a recipient."
+            });
+            if (firstInvalidField === null) firstInvalidField = input;
+            isValid = false;
+          } else {
+            document.getElementById(`roiRecipient-${index}`).removeAttribute("aria-invalid");
+          }
+        });
+      }
+
+      if (currentStep === 7 && under19Checkbox.checked) {
+        const guardianName = document.getElementById("guardianConsentName");
+        const guardianDate = document.getElementById("guardianConsentDate");
+        if (!guardianName.value.trim()) {
+          guardianName.setAttribute("aria-invalid", "true");
+          invalidFields.push({ field: guardianName, message: "Parent/guardian name required." });
+          if (firstInvalidField === null) firstInvalidField = guardianName;
+          isValid = false;
+        } else {
+          guardianName.removeAttribute("aria-invalid");
+        }
+        if (!guardianDate.value) {
+          guardianDate.setAttribute("aria-invalid", "true");
+          invalidFields.push({ field: guardianDate, message: "Parent/guardian date required." });
+          if (firstInvalidField === null) firstInvalidField = guardianDate;
+          isValid = false;
+        } else {
+          guardianDate.removeAttribute("aria-invalid");
+        }
+      }
+
+        // Validate signature for Step 5
+        if (currentStep === 5) {
+          const signatureInput = document.getElementById("signatureData");
+          if (signatureInput && signatureInput.hasAttribute("required") && !formState.consents.treatment.signature) {
+            invalidFields.push({ field: signatureCanvas, message: "Signature is required." });
+            if (signatureError) {
+              signatureError.textContent = "Signature is required.";
+              signatureError.hidden = false;
+            }
+            if (firstInvalidField === null) {
+              firstInvalidField = signatureCanvas;
+            }
+            isValid = false;
+          } else if (signatureError) {
+            signatureError.hidden = true;
+          }
+        }
+
+        if (!isValid && firstInvalidField) {
+        renderErrorSummary(invalidFields);
+        const firstInvalid = invalidFields[0].field;
+        firstInvalid.focus();
+        nextBtn.disabled = true;
+        return false;
+      }
+
+      errorSummary.hidden = true;
+      errorList.innerHTML = "";
+      nextBtn.disabled = Boolean(invalidFields.length);
+      return !invalidFields.length;
+    }
+
+    function renderErrorSummary(errors) {
+      errorSummary.hidden = false;
+      errorList.innerHTML = "";
+      errors.forEach(({ field, message }) => {
+        const item = document.createElement("li");
+        const link = document.createElement("button");
+        link.type = "button";
+        link.className = "btn-subtle";
+        link.textContent = field.labels?.[0]?.textContent || field.id;
+        link.addEventListener("click", () => {
+          field.focus();
+        });
+        item.appendChild(link);
+        const text = document.createElement("span");
+        text.textContent = ` — ${message}`;
+        item.appendChild(text);
+        errorList.appendChild(item);
+      });
+      errorSummary.focus();
+    }
+
+    form.addEventListener("input", () => {
+      validateCurrentStep();
+    });
+
+    /* Review step */
+    const reviewOutput = document.getElementById("reviewOutput");
+    const printSnapshot = document.getElementById("printSnapshot");
+
+    function formatBoolean(value) {
+      return value ? "Yes" : "No";
+    }
+
+    const reviewSections = [
+      { title: "Intake Information", step: 1, path: "intake" },
+      { title: "Insurance & Clinical Intake", step: 2, path: "insurance" },
+      { title: "Medical Information", step: 3, path: "medical" },
+      { title: "Social History", step: 4, path: "social" },
+      { title: "Consent to Treatment & Authorization", step: 5, path: "consents.treatment" },
+      { title: "Telehealth Consent", step: 6, path: "consents.telehealth" },
+      { title: "Communication Authorization", step: 7, path: "consents.communications" },
+      { title: "Rights & Responsibilities", step: 8, path: "consents.rights" },
+      { title: "Release of Information", step: 9, path: "roi" }
+    ];
+
+    function cleanLabel(label) {
+      return label
+        .replace(/([A-Z])/g, " $1")
+        .replace(/_/g, " ")
+        .replace(/\\s+/g, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+        .trim();
+    }
+
+    const isPlainObject = (value) =>
+      value !== null && typeof value === "object" && !Array.isArray(value);
+
+    const arrayLabelMap = {
+      rx: "Medication",
+      otc: "Supplement",
+      children: "Child",
+      stressors: "Stressor",
+      supports: "Support",
+      roi: "Release"
+    };
+
+    const deriveArrayLabel = (key, label) => {
+      if (arrayLabelMap[key]) return arrayLabelMap[key];
+      if (label.endsWith("ies")) return label.slice(0, -3) + "y";
+      if (label.endsWith("s")) return label.slice(0, -1);
+      return label || "Item";
+    };
+
+    function hasContent(value) {
+      if (value === null || value === undefined) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      if (typeof value === "number") return true;
+      if (typeof value === "boolean") return true;
+      if (Array.isArray(value)) {
+        return value.some((item) => hasContent(item));
+      }
+      if (isPlainObject(value)) {
+        const entries = Object.entries(value);
+        if (!entries.length) return false;
+        const allBoolean = entries.every(([, val]) => typeof val === "boolean");
+        if (allBoolean) {
+          return true;
+        }
+        return entries.some(([, val]) => hasContent(val));
+      }
+      return false;
+    }
+
+    function appendSummary(container, data, arrayLabel = "Item") {
+      if (Array.isArray(data)) {
+        const filtered = data.filter((item) => hasContent(item));
+        if (!filtered.length) {
+          const p = document.createElement("p");
+          p.textContent = "No entries provided.";
+          container.appendChild(p);
+          return;
+        }
+
+        if (filtered.every((item) => typeof item === "string" || typeof item === "number")) {
+          const p = document.createElement("p");
+          p.textContent = filtered.map((item) => String(item)).join(", ");
+          container.appendChild(p);
+          return;
+        }
+
+        let rendered = 0;
+        filtered.forEach((item) => {
+          rendered += 1;
+          const block = document.createElement("div");
+          block.className = "summary-block";
+          const heading = document.createElement("h4");
+          heading.textContent = `${arrayLabel} ${rendered}`;
+          block.appendChild(heading);
+          appendSummary(block, item, arrayLabel);
+          container.appendChild(block);
+        }
+        );
+        return;
+      }
+
+      if (isPlainObject(data)) {
+        const list = document.createElement("dl");
+        let hasRow = false;
+
+        Object.entries(data).forEach(([key, value]) => {
+          if (!hasContent(value) && typeof value !== "boolean") return;
+
+          const term = document.createElement("dt");
+          const label = cleanLabel(key);
+          term.textContent = label;
+          const desc = document.createElement("dd");
+
+          if (Array.isArray(value)) {
+            if (!value.length) {
+              desc.textContent = "None";
+            } else if (value.every((item) => typeof item === "string")) {
+              desc.textContent = value.join(", ");
+            } else {
+              appendSummary(desc, value, deriveArrayLabel(key, label));
+            }
+          } else if (isPlainObject(value)) {
+            const entries = Object.entries(value);
+            const booleanOnly = entries.length && entries.every(([, val]) => typeof val === "boolean");
+            if (booleanOnly) {
+              const selected = entries.filter(([, val]) => val).map(([label]) => cleanLabel(label));
+              desc.textContent = selected.length ? selected.join(", ") : "None selected";
+            } else {
+              appendSummary(desc, value, label);
+            }
+          } else if (typeof value === "boolean") {
+            desc.textContent = formatBoolean(value);
+          } else {
+            desc.textContent = value || "Not provided";
+          }
+
+          list.appendChild(term);
+          list.appendChild(desc);
+          hasRow = true;
+        });
+
+        if (hasRow) {
+          container.appendChild(list);
+        } else {
+          const p = document.createElement("p");
+          p.textContent = "No information provided.";
+          container.appendChild(p);
+        }
+        return;
+      }
+
+      const paragraph = document.createElement("p");
+      paragraph.textContent = data ? String(data) : "Not provided";
+      container.appendChild(paragraph);
+    }
+
+    const sectionStatusText = (step) => {
+      if (currentStep > step) return "Completed";
+      if (currentStep === step) return "In progress";
+      return "Not started";
+    };
+
+    function renderReview({ force = false, target = reviewOutput, interactive = target === reviewOutput } = {}) {
+      if (!target) return;
+      if (!force && interactive && currentStep !== 10) {
+        target.innerHTML = "";
+        return;
+      }
+
+      target.innerHTML = "";
+
+      if (!interactive) {
+        const heading = document.createElement("h2");
+        heading.textContent = "Intake Summary";
+        target.appendChild(heading);
+
+        const practiceLine = document.createElement("p");
+        practiceLine.className = "summary-status";
+        practiceLine.textContent = "Lemke Michels Psychotherapy & Weber Behavioral Health";
+        target.appendChild(practiceLine);
+
+        const meta = document.createElement("p");
+        meta.className = "summary-status";
+        meta.textContent = `Generated ${new Date().toLocaleString()} · Progress: Step ${currentStep} of ${totalSteps}`;
+        target.appendChild(meta);
+      }
+
+      reviewSections.forEach(({ title, step, path }) => {
+        let data = getValueAtPath(formState, path);
+
+        // Decrypt sensitive fields before displaying
+        if (data && encryptor.encryptionEnabled) {
+          data = encryptor.decryptObject(data, SENSITIVE_FIELDS);
+        }
+
+        const label = title.includes("Release") ? "Release" : "Entry";
+
+        if (interactive) {
+          const details = document.createElement("details");
+          details.className = "summary-card";
+          details.open = true;
+          const summary = document.createElement("summary");
+          const summaryText = document.createElement("span");
+          summaryText.textContent = title;
+          const summaryButton = document.createElement("button");
+          summaryButton.type = "button";
+          summaryButton.className = "btn-subtle print-hidden";
+          summaryButton.dataset.editStep = step;
+          summaryButton.textContent = "Edit section";
+          summary.appendChild(summaryText);
+          summary.appendChild(summaryButton);
+          details.appendChild(summary);
+
+          const content = document.createElement("div");
+          if (data === undefined) {
+            const p = document.createElement("p");
+            p.textContent = "No information provided.";
+            content.appendChild(p);
+          } else {
+            appendSummary(content, data, label);
+          }
+          details.appendChild(content);
+          target.appendChild(details);
+        } else {
+          const section = document.createElement("section");
+          section.className = "summary-card";
+          const heading = document.createElement("h3");
+          heading.textContent = title;
+          section.appendChild(heading);
+
+          const status = document.createElement("p");
+          status.className = "summary-status";
+          status.textContent = sectionStatusText(step);
+          section.appendChild(status);
+
+          const content = document.createElement("div");
+          if (data === undefined) {
+            const p = document.createElement("p");
+            p.textContent = "No information provided.";
+            content.appendChild(p);
+          } else {
+            appendSummary(content, data, label);
+          }
+          section.appendChild(content);
+          target.appendChild(section);
+        }
+      });
+
+      if (interactive) {
+        target.querySelectorAll("[data-edit-step]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const step = Number(button.dataset.editStep);
+            goToStep(step);
+          });
+        });
+      }
+    }
+
+    const formatPrimitive = (value) => {
+      if (value === null || value === undefined) return "";
+      return String(value).trim();
+    };
+
+    function addValueLines(lines, label, value, depth) {
+      if (!hasContent(value) && typeof value !== "boolean") {
+        return;
+      }
+      const indent = "  ".repeat(depth);
+      if (Array.isArray(value)) {
+        const filtered = value.filter((item) => hasContent(item));
+        if (!filtered.length) {
+          lines.push(`${indent}- ${label}: None`);
+          return;
+        }
+        const primitives = filtered.every((item) => !isPlainObject(item) && !Array.isArray(item));
+        if (primitives) {
+          const items = filtered.map((item) => formatPrimitive(item)).filter((text) => text.length);
+          lines.push(`${indent}- ${label}: ${items.length ? items.join(", ") : "Not provided"}`);
+        } else {
+          lines.push(`${indent}- ${label}:`);
+          filtered.forEach((item, index) => {
+            const itemLabel = `${label} ${index + 1}`;
+            addValueLines(lines, itemLabel, item, depth + 1);
+          });
+        }
+        return;
+      }
+      if (isPlainObject(value)) {
+        const entries = Object.entries(value).filter(([, val]) => hasContent(val));
+        if (!entries.length) {
+          lines.push(`${indent}- ${label}: Not provided`);
+          return;
+        }
+        lines.push(`${indent}- ${label}:`);
+        entries.forEach(([key, val]) => {
+          addValueLines(lines, cleanLabel(key), val, depth + 1);
+        });
+        return;
+      }
+      if (typeof value === "boolean") {
+        lines.push(`${indent}- ${label}: ${formatBoolean(value)}`);
+        return;
+      }
+      const text = formatPrimitive(value);
+      lines.push(`${indent}- ${label}: ${text || "Not provided"}`);
+    }
+
+    function summarizeForEmail() {
+      const lines = [];
+      lines.push("Lemke Michels Psychotherapy & Weber Behavioral Health Intake Summary");
+      lines.push(`Generated: ${new Date().toLocaleString()}`);
+      lines.push(`Progress: Step ${currentStep} of ${totalSteps}`);
+      lines.push("");
+
+      reviewSections.forEach(({ title, path }) => {
+        let data = getValueAtPath(formState, path);
+
+        // Decrypt sensitive fields before exporting
+        if (data && encryptor.encryptionEnabled) {
+          data = encryptor.decryptObject(data, SENSITIVE_FIELDS);
+        }
+
+        lines.push(title);
+        lines.push("-".repeat(title.length));
+        if (!hasContent(data)) {
+          lines.push("No information provided.");
+        } else if (Array.isArray(data)) {
+          const filtered = data.filter((item) => hasContent(item));
+          if (!filtered.length) {
+            lines.push("No information provided.");
+          } else {
+            const labelBase = title.includes("Release") ? "Release" : "Entry";
+            filtered.forEach((item, index) => {
+              addValueLines(lines, `${labelBase} ${index + 1}`, item, 1);
+            });
+          }
+        } else if (isPlainObject(data)) {
+          const entries = Object.entries(data).filter(([, val]) => hasContent(val));
+          if (!entries.length) {
+            lines.push("No information provided.");
+          } else {
+            entries.forEach(([key, val]) => {
+              addValueLines(lines, cleanLabel(key), val, 1);
+            });
+          }
+        } else {
+          const text = formatPrimitive(data);
+          lines.push(text || "No information provided.");
+        }
+        lines.push("");
+      });
+
+      lines.push("Sent via in-browser intake form.");
+      return lines.join("\n");
+    }
+
+    function prepareAndPrint() {
+      renderReview({ force: true, target: printSnapshot, interactive: false });
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    }
+
+    /* Export and import */
+    quickPrintBtn.addEventListener("click", prepareAndPrint);
+    emailBtn?.addEventListener("click", () => {
+      const summaryText = summarizeForEmail();
+      const blob = new Blob([summaryText], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const now = new Date();
+      const filename = `intake-summary-${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}.txt`;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert("Summary downloaded as a text file. You can now attach this file to an email.");
+    });
+
+    clearAllBtn.addEventListener("click", () => {
+      if (confirm("This clears every response. Are you sure?")) {
+        resetFormState();
+      }
+    });
+
+    printBtn?.addEventListener("click", prepareAndPrint);
+
+    /* Rehydrate form */
+    function rehydrateForm() {
+      form.querySelectorAll("[data-model]").forEach((input) => {
+        const path = input.dataset.model;
+        let value = getValueAtPath(formState, path);
+
+        // Decrypt sensitive fields for display in form
+        if (value && typeof value === "string" && SENSITIVE_FIELDS.includes(path) && encryptor.encryptionEnabled) {
+          value = encryptor.decryptString(value);
+        }
+
+        if (input.type === "checkbox") {
+          input.checked = Boolean(value);
+        } else {
+          input.value = value ?? "";
+        }
+      });
+      renderRoi();
+      Object.entries(dynamicHandlers).forEach(([key, handler]) => {
+        const listEl = document.getElementById(handler.listId);
+        const collectionPath = listEl.dataset.collection;
+        const collection = getValueAtPath(formState, collectionPath);
+        listEl.innerHTML = "";
+        collection.forEach((item, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "dynamic-item";
+          wrapper.innerHTML = handler.template(item, index);
+          wrapper.querySelectorAll("input, textarea, select").forEach((input) => {
+            const field = input.dataset.collectionPath;
+            input.value = item[field] || "";
+            input.addEventListener("input", () => {
+              collection[index][field] = input.value;
+              markDirty();
+              validateCurrentStep();
+            });
+          });
+          const removeBtn = wrapper.querySelector("[data-remove]");
+          removeBtn.addEventListener("click", () => {
+            collection.splice(index, 1);
+            setValueAtPath(formState, collectionPath, collection);
+            markDirty();
+            rehydrateForm();
+            validateCurrentStep();
+          });
+          listEl.appendChild(wrapper);
+        });
+      });
+      chipInputs.forEach((container) => {
+        const list = container.querySelector(".chip-list");
+        const path = container.dataset.chipTarget;
+        const items = getValueAtPath(formState, path) || [];
+        list.innerHTML = "";
+        items.forEach((item, index) => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          const chipText = document.createElement("span");
+          chipText.textContent = item;
+          chip.appendChild(chipText);
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", () => {
+            items.splice(index, 1);
+            setValueAtPath(formState, path, items);
+            markDirty();
+            rehydrateForm();
+            validateCurrentStep();
+          });
+          chip.appendChild(removeBtn);
+          list.appendChild(chip);
+        });
+      });
+      guardianFields.hidden = !formState.consents.communications.under19;
+      under19Checkbox.checked = formState.consents.communications.under19;
+      renderReview();
+      validateCurrentStep();
+    }
+
+    /* ============================================
+       ENCRYPTION INITIALIZATION
+       ============================================ */
+
+    /**
+     * Initialize encryption with a passphrase prompt
+     * This runs once when the page loads
+     */
+    (async () => {
+      // Show a modal or prompt for encryption passphrase
+      const passphrase = prompt(
+        "🔐 Encryption Security\n\nTo protect sensitive information (names, phone numbers, emails, addresses, insurance details, etc.), please create a secure passphrase.\n\nThis passphrase will encrypt your data as you enter it. You'll need it to decrypt your information later.\n\nMinimum 12 characters recommended.",
+        ""
+      );
+
+      if (passphrase && passphrase.length > 0) {
+        const success = await encryptor.initializeWithPassphrase(passphrase);
+        if (success) {
+          console.log("✓ Encryption enabled and initialized");
+          // Add visual indicator in header
+          const headerContainer = document.querySelector("header .container");
+          if (headerContainer) {
+            const indicator = document.createElement("div");
+            indicator.className = "encryption-indicator";
+            indicator.innerHTML = "🔒 <strong>Encrypted</strong>";
+            headerContainer.style.position = "relative";
+            headerContainer.appendChild(indicator);
+          }
+
+          // Add status indicator in the form instructions area
+          const mainContent = document.querySelector("main");
+          if (mainContent) {
+            const statusDiv = document.createElement("div");
+            statusDiv.className = "encryption-status active";
+            statusDiv.innerHTML = "🔐 Encryption Active: Your sensitive information is being encrypted with XSalsa20-Poly1305";
+            mainContent.insertBefore(statusDiv, mainContent.firstChild);
+          }
+        } else {
+          console.warn("⚠ Encryption failed to initialize - falling back to unencrypted mode");
+          alert("Encryption initialization failed. Your data will be stored unencrypted.");
+
+          // Add warning indicator
+          const mainContent = document.querySelector("main");
+          if (mainContent) {
+            const statusDiv = document.createElement("div");
+            statusDiv.className = "encryption-status warning";
+            statusDiv.innerHTML = "⚠ Encryption Failed: Your data will be stored unencrypted";
+            mainContent.insertBefore(statusDiv, mainContent.firstChild);
+          }
+        }
+      } else {
+        console.warn("⚠ No passphrase provided - encryption disabled");
+        encryptor.encryptionEnabled = false;
+
+        // Add warning indicator for no encryption
+        const mainContent = document.querySelector("main");
+        if (mainContent) {
+          const statusDiv = document.createElement("div");
+          statusDiv.className = "encryption-status warning";
+          statusDiv.innerHTML = "⚠ No Encryption: Your data will be stored unencrypted. Please refresh and enter a passphrase for security.";
+          mainContent.insertBefore(statusDiv, mainContent.firstChild);
+        }
+
+        alert("⚠ No passphrase entered. Your data will NOT be encrypted. Please refresh and enter a passphrase for security.");
+      }
+
+      // Continue with form initialization
+      startFormInitialization();
+    })();
+
+    /**
+     * Separate function for form initialization
+     * This is called after encryption is set up
+     */
+    function startFormInitialization() {
+      /* Initialize */
+      goToStep(1);
+      validateCurrentStep();
+    }
+
+    /* Accessibility enhancement: trap focus in modal before dismissal */
+    const focusableModalEls = modal.querySelectorAll("a[href], button:not([disabled]), textarea, input, select");
+    const firstModalEl = focusableModalEls[0];
+    const lastModalEl = focusableModalEls[focusableModalEls.length - 1];
+    modal.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") {
+        if (event.shiftKey) {
+          if (document.activeElement === firstModalEl) {
+            event.preventDefault();
+            lastModalEl.focus();
+          }
+        } else {
+          if (document.activeElement === lastModalEl) {
+            event.preventDefault();
+            firstModalEl.focus();
+          }
+        }
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        window.location.href = "about:blank";
+      }
+    });
+
+    firstModalEl.focus();
+  </script>
+</body>
+</html>
