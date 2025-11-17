@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choose Your Transformation - Jocelyn Michelle Lemke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-image">
+                <img src="images/hero-logo.png" alt="Jocelyn Michelle Lemke" class="hero-portrait">
+            </div>
+            <div class="hero-text">
+                <h1 class="hero-title">Choose Your Transformation</h1>
+                <p class="hero-subtitle">Investment in yourself is the foundation of empowerment</p>
+            </div>
+        </div>
+        <div class="hero-divider"></div>
+    </section>
+
+    <!-- Programs Grid -->
+    <main class="programs-section">
+        <div class="container">
+            <div class="programs-grid">
+
+                <!-- Program 1: The Confident Reset -->
+                <div class="program-card" data-program="confident-reset">
+                    <div class="card-header">
+                        <h3 class="program-title">The Confident Reset</h3>
+                        <p class="program-subtitle">A 7-Day Reconnection Experience</p>
+                        <p class="program-price">$97</p>
+                    </div>
+                    <p class="program-description">A focused reset designed for women ready to break free from emotional exhaustion and rediscover their inner confidence. Learn how to silence self-doubt, rebuild daily motivation, and reconnect with your true sense of power. A perfect quick-start for your confidence journey.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="reset-full">
+                            <input type="radio" id="reset-full" name="reset-payment" value="97" checked>
+                            <label for="reset-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$97</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - CONFIDENT RESET $97]">
+                        Begin Your Reset
+                    </button>
+                </div>
+
+                <!-- Program 2: Rebuild: The Confidence Foundation -->
+                <div class="program-card" data-program="rebuild">
+                    <div class="card-header">
+                        <h3 class="program-title">Rebuild: The Confidence Foundation</h3>
+                        <p class="program-subtitle">Build a New Base of Strength & Self-Belief</p>
+                        <p class="program-price">$397</p>
+                    </div>
+                    <p class="program-description">Confidence doesn't come from pretending to be fine — it comes from rebuilding trust with yourself. This program helps you create a strong foundation for self-worth, boundary setting, and emotional clarity so you can move forward with direction and stability.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="rebuild-full">
+                            <input type="radio" id="rebuild-full" name="rebuild-payment" value="397" checked>
+                            <label for="rebuild-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$397</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - REBUILD $397]">
+                        Start Rebuilding
+                    </button>
+                </div>
+
+                <!-- Program 3: Thrive: Advanced Confidence Mastery -->
+                <div class="program-card" data-program="thrive">
+                    <div class="card-header">
+                        <h3 class="program-title">Thrive: Advanced Confidence Mastery</h3>
+                        <p class="program-subtitle">Go Beyond Basic Confidence — Lead Your Life with Clarity</p>
+                        <p class="program-price">$697</p>
+                    </div>
+                    <p class="program-description">Designed for women who are ready to move from surviving to thriving. You'll learn identity-based goal systems, mindset mastery, and emotional regulation tools to maintain momentum, balance, and self-trust no matter what life throws your way.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="thrive-full">
+                            <input type="radio" id="thrive-full" name="thrive-payment" value="697" checked>
+                            <label for="thrive-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$697</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - THRIVE $697]">
+                        Begin Thriving
+                    </button>
+                </div>
+
+                <!-- Program 4: Confidence Mastery + VIP Support -->
+                <div class="program-card featured" data-program="vip">
+                    <div class="featured-badge">VIP</div>
+                    <div class="card-header">
+                        <h3 class="program-title">Confidence Mastery + VIP Support</h3>
+                        <p class="program-subtitle">The Confidence Mastery Experience, Elevated</p>
+                        <p class="program-price">$997</p>
+                    </div>
+                    <p class="program-description">This upgraded version of Thrive includes direct VIP coaching with Michelle for personalized accountability and accelerated transformation. Receive one-on-one guidance, tailored strategy sessions, and priority feedback to help you lock in lasting results.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="vip-full">
+                            <input type="radio" id="vip-full" name="vip-payment" value="997" checked>
+                            <label for="vip-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$997</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - VIP $997]">
+                        Claim VIP Access
+                    </button>
+                </div>
+
+                <!-- Program 5: The Empowered Identity Blueprint -->
+                <div class="program-card featured" data-program="blueprint">
+                    <div class="featured-badge">Premium</div>
+                    <div class="card-header">
+                        <h3 class="program-title">The Empowered Identity Blueprint</h3>
+                        <p class="program-subtitle">Redesign Your Life from the Inside Out</p>
+                        <p class="program-price">$897/mo - $5,500</p>
+                    </div>
+                    <p class="program-description">A full-spectrum transformation experience that helps you embody your most authentic, confident, and purpose-driven self. Through guided coaching and proven identity-building frameworks, you'll create alignment in your goals, emotions, and daily systems.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="blueprint-early">
+                            <input type="radio" id="blueprint-early" name="blueprint-payment" value="5000" checked>
+                            <label for="blueprint-early">
+                                <span class="option-label">Early Pay in Full</span>
+                                <span class="option-price">$5,000</span>
+                                <span class="savings-badge">Save $500</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="blueprint-full">
+                            <input type="radio" id="blueprint-full" name="blueprint-payment" value="5500">
+                            <label for="blueprint-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$5,500</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="blueprint-3">
+                            <input type="radio" id="blueprint-3" name="blueprint-payment" value="1897">
+                            <label for="blueprint-3">
+                                <span class="option-label">3 Monthly Payments</span>
+                                <span class="option-price">$1,897/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="blueprint-4">
+                            <input type="radio" id="blueprint-4" name="blueprint-payment" value="1496">
+                            <label for="blueprint-4">
+                                <span class="option-label">4 Monthly Payments</span>
+                                <span class="option-price">$1,496/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="blueprint-6">
+                            <input type="radio" id="blueprint-6" name="blueprint-payment" value="997">
+                            <label for="blueprint-6">
+                                <span class="option-label">6 Monthly Payments</span>
+                                <span class="option-price">$997/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="blueprint-6-discount">
+                            <input type="radio" id="blueprint-6-discount" name="blueprint-payment" value="897">
+                            <label for="blueprint-6-discount">
+                                <span class="option-label">6 Monthly Payments (Discounted)</span>
+                                <span class="option-price">$897/mo</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - BLUEPRINT - WILL CHANGE BASED ON SELECTION]">
+                        Claim Your Blueprint
+                    </button>
+                </div>
+
+                <!-- Program 6: The Complete Reinvention Intensive -->
+                <div class="program-card featured" data-program="reinvention">
+                    <div class="featured-badge">Elite</div>
+                    <div class="card-header">
+                        <h3 class="program-title">The Complete Reinvention Intensive</h3>
+                        <p class="program-subtitle">Rebuild Your Confidence, Leadership, and Life Systems</p>
+                        <p class="program-price">$1,997/mo - $7,500</p>
+                    </div>
+                    <p class="program-description">This high-level coaching experience blends emotional strategy with structural life redesign. You'll develop the systems, habits, and inner frameworks to sustain balance, confidence, and fulfillment long-term. Perfect for women stepping into leadership in life and career.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="reinvention-early">
+                            <input type="radio" id="reinvention-early" name="reinvention-payment" value="7000" checked>
+                            <label for="reinvention-early">
+                                <span class="option-label">Early Pay in Full</span>
+                                <span class="option-price">$7,000</span>
+                                <span class="savings-badge">Save $500</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="reinvention-full">
+                            <input type="radio" id="reinvention-full" name="reinvention-payment" value="7500">
+                            <label for="reinvention-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$7,500</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="reinvention-2">
+                            <input type="radio" id="reinvention-2" name="reinvention-payment" value="3897">
+                            <label for="reinvention-2">
+                                <span class="option-label">2 Monthly Payments</span>
+                                <span class="option-price">$3,897/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="reinvention-4">
+                            <input type="radio" id="reinvention-4" name="reinvention-payment" value="1997">
+                            <label for="reinvention-4">
+                                <span class="option-label">4 Monthly Payments</span>
+                                <span class="option-price">$1,997/mo</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - REINVENTION - WILL CHANGE BASED ON SELECTION]">
+                        Begin Your Reinvention
+                    </button>
+                </div>
+
+                <!-- Program 7: The Pinnacle: Complete Life Mastery -->
+                <div class="program-card featured pinnacle" data-program="pinnacle">
+                    <div class="featured-badge gold">Pinnacle</div>
+                    <div class="card-header">
+                        <h3 class="program-title">The Pinnacle: Complete Life Mastery</h3>
+                        <p class="program-subtitle">Full-Spectrum Sovereignty for the Woman Who Leads Herself</p>
+                        <p class="program-price">$1,437/mo - $14,000</p>
+                    </div>
+                    <p class="program-description">This elite private mentorship is the ultimate container for total transformation. You'll master emotional intelligence, leadership, identity architecture, and relational clarity — redefining success and sovereignty from the inside out. For the woman ready to become the architect of her own legacy.</p>
+
+                    <div class="payment-options">
+                        <div class="payment-option" data-payment-id="pinnacle-full">
+                            <input type="radio" id="pinnacle-full" name="pinnacle-payment" value="14000" checked>
+                            <label for="pinnacle-full">
+                                <span class="option-label">Pay in Full</span>
+                                <span class="option-price">$14,000</span>
+                                <span class="savings-badge">Save $1,000</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="pinnacle-2">
+                            <input type="radio" id="pinnacle-2" name="pinnacle-payment" value="7687.50">
+                            <label for="pinnacle-2">
+                                <span class="option-label">2 Monthly Payments</span>
+                                <span class="option-price">$7,687.50/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="pinnacle-4">
+                            <input type="radio" id="pinnacle-4" name="pinnacle-payment" value="3937.50">
+                            <label for="pinnacle-4">
+                                <span class="option-label">4 Monthly Payments</span>
+                                <span class="option-price">$3,937.50/mo</span>
+                            </label>
+                        </div>
+                        <div class="payment-option" data-payment-id="pinnacle-12">
+                            <input type="radio" id="pinnacle-12" name="pinnacle-payment" value="1437.50">
+                            <label for="pinnacle-12">
+                                <span class="option-label">12 Monthly Payments</span>
+                                <span class="option-price">$1,437.50/mo</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button class="checkout-btn" data-stripe-link="[INSERT STRIPE LINK - PINNACLE - WILL CHANGE BASED ON SELECTION]">
+                        Claim Pinnacle Access
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Coaching with Michelle. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
