@@ -22,11 +22,27 @@ const DEFAULT_ADMIN = {
 function initLocalUsers() {
     let users = JSON.parse(localStorage.getItem('local_users') || '[]');
 
-    // Add default admin if not exists
-    if (!users.find(u => u.email === DEFAULT_ADMIN.email)) {
+    // Ensure default admin exists and is up to date
+    const adminIndex = users.findIndex(u => u.id === DEFAULT_ADMIN.id || u.email === DEFAULT_ADMIN.email);
+    if (adminIndex >= 0) {
+        users[adminIndex] = { ...users[adminIndex], ...DEFAULT_ADMIN };
+    } else {
         users.push(DEFAULT_ADMIN);
-        localStorage.setItem('local_users', JSON.stringify(users));
     }
+
+    // Deduplicate by email (keep first)
+    const deduped = [];
+    const seen = new Set();
+    users.forEach(u => {
+        const key = u.email.toLowerCase();
+        if (!seen.has(key)) {
+            deduped.push(u);
+            seen.add(key);
+        }
+    });
+
+    users = deduped;
+    localStorage.setItem('local_users', JSON.stringify(users));
 
     return users;
 }
