@@ -1,0 +1,25 @@
+# Vercel Ignore File
+
+# Documentation
+AGENTS.md
+CLAUDE.md
+FIREBASE_SETUP.md
+QUICK_START.md
+SECURITY_GUIDE.md
+
+# Git files
+.git
+.gitignore
+
+# Firebase files (not needed for Vercel deployment)
+.firebaserc
+firebase.json
+deploy.sh
+
+# Local files
+.DS_Store
+*.log
+
+# IDE files
+.vscode
+.idea
