@@ -1,0 +1,18 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Vercel
+.vercel
+
+# Environment files
+.env*.local
+.env.production
+
+# OS files
+.DS_Store
+
+# Editor / tool config
+.claude/

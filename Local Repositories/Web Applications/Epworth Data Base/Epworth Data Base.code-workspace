@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../../Downloads/epworth-family-resources-documentation-data-main"
+		}
+	],
+	"settings": {
+		"git.ignoreLimitWarning": true
+	}
+}

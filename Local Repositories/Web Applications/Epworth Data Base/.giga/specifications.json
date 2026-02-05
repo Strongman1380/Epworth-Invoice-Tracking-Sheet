@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview covering the family services platform architecture, key components, and integration points"
+  },
+  {
+    "fileName": "data-models-family-services.mdc",
+    "description": "Detailed documentation of the family-centric data models, including complex family relationships, service authorizations, and case linking structures"
+  },
+  {
+    "fileName": "algorithms-document-generation.mdc",
+    "description": "Technical documentation of case note and monthly summary generation algorithms, including trauma-informed language processing and professional voice enforcement rules"
+  },
+  {
+    "fileName": "service-authorization-workflow.mdc",
+    "description": "Comprehensive documentation of the service authorization system, including expiration tracking, alert generation, and multi-level authorization management"
+  },
+  {
+    "fileName": "data-flow-service-tracking.mdc",
+    "description": "Documentation of data flow between components for service tracking, case management, and progress monitoring across the platform"
+  }
+]
