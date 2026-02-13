@@ -1,5 +1,6 @@
 import { json, methodNotAllowed } from './_utils.js'
 import { transcribeAudio } from './_openai.js'
+import { requireAuth } from './_auth.js'
 
 function parseDataUrl(dataUrl) {
   const match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '')
@@ -9,6 +10,9 @@ function parseDataUrl(dataUrl) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res)
+
+  const user = await requireAuth(req, res)
+  if (!user) return
 
   try {
     const { audioBase64, mimeType, filename } = req.body || {}

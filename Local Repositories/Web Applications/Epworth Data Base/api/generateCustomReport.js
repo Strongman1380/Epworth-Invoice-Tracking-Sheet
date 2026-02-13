@@ -1,8 +1,12 @@
 import { json, methodNotAllowed } from './_utils.js'
 import { chatText } from './_openai.js'
+import { requireAuth } from './_auth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res)
+
+  const user = await requireAuth(req, res)
+  if (!user) return
 
   try {
     const { prompt } = req.body || {}

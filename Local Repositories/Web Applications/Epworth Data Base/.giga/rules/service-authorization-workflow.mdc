@@ -1,34 +1,51 @@
 ---
-description: Documentation for managing service authorizations, expiration tracking, and multi-level authorization workflows in family services
+description: Handles service authorization tracking, expiration monitoring, and multi-level approval workflows for family services
 ---
 
 
 # service-authorization-workflow
 
-The service authorization workflow implements specialized tracking and management of family service authorizations with the following core components:
+Authorization tracking system for family support services with expiration monitoring and alert generation.
 
-## Authorization Expiration Monitoring (Score: 90)
-Path: `api/checkAuthAlerts.js`
-- Custom expiration tracking system for family service authorizations
-- Multi-case type support for concurrent authorization periods
-- Configurable lookback windows for upcoming expiration detection
-- Cross-case directory alert aggregation
-- Proactive notification system for authorization management
+## Core Authorization Components
 
-## Profile-Level Authorization Management (Score: 85)
-Path: `api/parseProfile.js`
-- Authorization period tracking integrated with family unit profiles
-- Service unit allocation and consumption monitoring
-- Authorization linkage across related family cases
-- Specialized fields for authorized service units and poverty level validation
-- Age-based service authorization categorization
+1. Expiration Tracking (src/api/checkAuthAlerts.js)
+- Monitors service authorization periods for family services
+- Calculates expiration windows based on service type:
+  - OHFS/IHFS: 90-day authorization periods
+  - PTSV: 180-day authorization periods
+  - DST variants: Service-specific durations
+- Generates tiered alerts at 30, 15, and 7 days before expiration
 
-Key Domain Patterns:
-- Authorization period validation against family service types
-- Multi-level authorization requirements based on service categories
-- Integrated alerts for authorization renewal deadlines
-- Family unit-based authorization aggregation
-- Service unit tracking across authorization periods
+2. Service Type Validation
+- Enforces specific service type authorization rules:
+  - DST-U (Diagnostic Support Team - Urgent)
+  - DST-MS (Diagnostic Support Team - Medical Specialty)
+  - DST-SP (Diagnostic Support Team - Specialized)
+  - DST-HF (Diagnostic Support Team - High Functioning)
+
+3. Authorization Status Monitoring
+- Tracks active vs. expired authorizations
+- Maintains authorization history per client
+- Links authorizations to clinical documentation requirements
+- Integrates with monthly progress reporting workflows
+
+## Business Rules
+
+1. Authorization Windows
+- Standard services: 90-day default period
+- Specialized services: Custom authorization periods
+- Emergency services: 14-day rapid authorization
+- Extensions require clinical justification
+
+2. Alert Generation
+- Approaching expiration notifications
+- Expired authorization warnings
+- Renewal requirement reminders
+- Clinical documentation linkages
+
+IMPORTANCE SCORE: 85/100
+The authorization workflow represents a critical business process for ensuring compliant service delivery and maintaining proper clinical documentation standards.
 
 $END$
 

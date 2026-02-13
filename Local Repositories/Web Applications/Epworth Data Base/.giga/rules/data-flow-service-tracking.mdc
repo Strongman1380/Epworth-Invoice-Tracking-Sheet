@@ -1,39 +1,37 @@
 ---
-description: Defines service tracking data flows between components for family services case management and monitoring
+description: Specifications for tracking data flow between clinical service components, case management, and progress monitoring systems
 ---
 
 
 # data-flow-service-tracking
 
-Primary data flows handle service tracking across three key dimensions:
+The data flow service tracking system integrates clinical documentation and service monitoring across four key areas:
 
-1. Authorization Flow (Importance: 90/100)
-`api/checkAuthAlerts.js`
-- Monitors service authorization periods across case types
-- Aggregates expiration alerts through case directory
-- Routes authorization status updates to case management components
-- Integrates with lookback window system for expiration prediction
+1. Clinical Documentation Flow
+- `src/api/parseCaseNote.js` handles structured case note parsing and validation
+- Enforces third-person clinical voice standards
+- Validates service type categorization (OHFS/IHFS, PTSV, DST-U, DST-MS, DST-SP, DST-HF)
+- Routes documentation through appropriate clinical review workflows
 
-2. Case Documentation Flow (Importance: 95/100)
-`api/parseCaseNote.js`
-- Structures service interaction data through trauma-informed parsing
-- Routes extracted service types and contact methods 
-- Streams goal tracking metrics to progress assessment engine
-- Enforces professional documentation standards in data pipeline
+2. Authorization Status Monitoring
+- `src/api/checkAuthAlerts.js` manages service authorization tracking
+- Monitors expiration windows for family support services
+- Routes authorization alerts through appropriate clinical supervisory channels
+- Tracks service-specific authorization requirements
 
-3. Progress Monitoring Flow (Importance: 95/100) 
-`api/generateMonthlySummary.js`
-- Aggregates multi-dimensional progress data across family units
-- Routes goal achievement metrics through specialized reporting sections
-- Streams safety assessment data to summary generation
-- Integrates professional voice transformation in documentation flow
+3. Clinical Reporting Pipeline
+- `src/api/generateExecutiveReport.js` structures trauma-informed reporting flows
+- Routes service delivery metrics through appropriate assessment channels
+- Integrates safety assessments with goal progress tracking
+- Channels clinical recommendations through supervisory review
 
-Core Integration Points:
-- Service authorization status feeds into case documentation
-- Case notes drive progress monitoring metrics
-- Progress data influences authorization tracking
-- All flows enforce trauma-informed data handling
-- Professional documentation standards applied across flows
+4. Progress Monitoring System
+- `src/api/generateMonthlySummary.js` coordinates monthly clinical assessments
+- Routes therapeutic goal progress through standardized evaluation channels
+- Integrates family engagement metrics with barrier assessments
+- Channels progress data through clinical recommendation workflows
+
+The system maintains HIPAA-compliant data routing while ensuring clinical documentation standards and safety protocols are preserved throughout all data flows.
 
 $END$
 

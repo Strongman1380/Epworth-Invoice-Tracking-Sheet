@@ -1,5 +1,6 @@
 import { json, methodNotAllowed } from './_utils.js'
 import { chatJson } from './_openai.js'
+import { requireAuth } from './_auth.js'
 
 const schema = {
   type: 'object',
@@ -66,6 +67,9 @@ const schema = {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res)
+
+  const user = await requireAuth(req, res)
+  if (!user) return
 
   try {
     const { text, hint } = req.body || {}

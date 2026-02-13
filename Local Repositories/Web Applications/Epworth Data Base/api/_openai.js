@@ -4,7 +4,7 @@ let _client
 
 export function getOpenAI() {
   if (!_client) {
-    const apiKey = process.env.OPENAI_API_KEY
+    const apiKey = (process.env.OPENAI_API_KEY || '').replace(/\\n/g, '').trim()
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not set')
     }

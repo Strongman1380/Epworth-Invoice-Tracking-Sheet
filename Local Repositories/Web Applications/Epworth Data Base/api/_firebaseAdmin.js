@@ -19,7 +19,14 @@ export function getAdminApp() {
     return _app
   }
 
-  // Fall back to default credentials if available (e.g., GOOGLE_APPLICATION_CREDENTIALS)
+  // Fall back to project ID for token verification (no full admin features)
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID
+  if (projectId) {
+    _app = admin.initializeApp({ projectId })
+    return _app
+  }
+
+  // Last resort: default credentials (works in Google Cloud environments)
   _app = admin.initializeApp({
     credential: admin.credential.applicationDefault(),
   })

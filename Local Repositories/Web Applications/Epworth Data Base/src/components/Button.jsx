@@ -13,7 +13,7 @@ export const Button = ({
   type = "button",
 }) => {
   const baseStyle =
-    "flex items-center justify-center px-4 py-3 sm:px-5 md:px-6 md:py-4 min-h-[44px] md:min-h-[48px] touch-manipulation text-sm sm:text-base rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+    "flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
     primary:
@@ -31,7 +31,7 @@ export const Button = ({
       className={`${baseStyle} ${variants[variant]} ${className}`}
       title={title}
     >
-      {iconName && <LucideIcon name={iconName} className="w-5 h-5 md:w-6 md:h-6 mr-2" />}
+      {iconName && <LucideIcon name={iconName} className="w-5 h-5 mr-2" />}
       {children}
     </button>
   );

@@ -1,49 +1,51 @@
 ---
-description: Technical implementation details for case note and report generation algorithms with trauma-informed processing rules
+description: Specifications for document generation algorithms used in clinical case note and summary creation with trauma-informed language processing
 ---
 
 
 # algorithms-document-generation
 
-## Document Processing Core (Importance: 95/100)
-Path: `api/parseCaseNote.js`, `api/generateMonthlySummary.js`
+The document generation system implements specialized algorithms for clinical documentation in family services:
 
-### Case Note Generation
-- Domain-specific parsing rules for family service documentation
-- Enforces professional standards through language transformation
-- Structured content extraction:
-  - Service type classification
-  - Contact method categorization
-  - Family interaction patterns
-- Trauma-informed language validation and correction
-- Goal tracking markers and progress indicators
+## Case Note Processing Algorithm
+Location: src/api/parseCaseNote.js
 
-### Monthly Summary Compilation
-- Specialized report sections:
-  - Goals progress assessment
-  - Barrier identification
-  - Safety status evaluation
-- Professional voice transformation rules for Family Life Specialists
-- Multi-dimensional progress tracking across family units
-- Integration of trauma-informed documentation requirements
+- Enforces professional third-person voice through language pattern matching
+- Validates and structures service types (OHFS/IHFS, PTSV, DST-U, DST-MS, DST-SP, DST-HF)
+- Transforms raw case notes into standardized clinical format
+- Applies trauma-informed language filters
 
-## Document Standards Enforcement (Importance: 90/100)
-- Professional documentation standards verification
-- Trauma-informed language pattern matching
-- Service-specific terminology requirements
-- Family-centric documentation structure
-- Progress assessment terminology standardization
-- Safety-focused language protocols
-- Goal-oriented documentation markers
+## Monthly Summary Generation
+Location: src/api/generateMonthlySummary.js
 
-## Document Integration Patterns
-- Family unit relationship documentation
-- Service authorization period inclusion
-- Goal tracking integration
-- Safety assessment incorporation
-- Professional voice consistency
-- Multi-party interaction documentation
-- Progress monitoring markers
+Structured assessment algorithm that compiles:
+- Progress toward therapeutic goals
+- Safety assessment metrics
+- Barrier identification patterns
+- Family engagement scoring
+- Clinical recommendations synthesis
+
+## Executive Report Generation
+Location: src/api/generateExecutiveReport.js
+
+Clinical supervision report creation with:
+- Service delivery metrics aggregation
+- Safety assessment compilation
+- Goal progress tracking synthesis
+- Authorization status monitoring
+- Clinical recommendations formatting
+
+The document generation system enforces:
+1. HIPAA-compliant content structuring
+2. Clinical documentation standards
+3. Professional voice requirements
+4. Trauma-informed language patterns
+5. Industry-standard reporting sections
+
+Importance Score: 75/100
+- Critical for clinical documentation compliance
+- Core business requirement for family services
+- Specialized domain-specific implementation
 
 $END$
 

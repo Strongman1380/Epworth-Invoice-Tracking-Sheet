@@ -1,5 +1,6 @@
 import { json, methodNotAllowed } from './_utils.js'
 import { getDb } from './_firebaseAdmin.js'
+import { requireCronAuth } from './_auth.js'
 
 function parseDate(value) {
   if (!value) return null
@@ -27,6 +28,9 @@ async function postWebhook(payload) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return methodNotAllowed(res)
+
+  const authorized = await requireCronAuth(req, res)
+  if (!authorized) return
 
   try {
     const db = getDb()

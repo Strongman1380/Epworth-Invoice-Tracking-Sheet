@@ -3,8 +3,11 @@ import DOMPurify from 'dompurify';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore';
-import * as LucideIcons from 'lucide-react';
-import UserManagement from './components/UserManagement';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import html2pdf from 'html2pdf.js';
+import { LucideIcon } from './components/LucideIcon';
+import { Button } from './components/Button';
 
 
       // --- APPLICATION CONSTANTS ---
@@ -43,6 +46,25 @@ import UserManagement from './components/UserManagement';
         return String(html || "")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
+      };
+
+      // --- TIME FORMAT HELPER ---
+      const formatTime12h = (t) => {
+        if (!t) return "";
+        const [h, m] = t.split(":").map(Number);
+        if (isNaN(h) || isNaN(m)) return t;
+        const period = h >= 12 ? "PM" : "AM";
+        const hour = h % 12 || 12;
+        return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+      };
+
+      // --- AGE RANGE MIGRATION HELPER ---
+      const migrateAgeRange = (val) => {
+        const v = String(val || "").trim();
+        if (v === "6-10") return "6-12";
+        if (v === "11-14") return "";
+        if (v === "15-19") return "13-19";
+        return v;
       };
 
       // --- VALIDATION HELPERS ---
@@ -167,6 +189,14 @@ import UserManagement from './components/UserManagement';
         );
       }
 
+      // Authenticated fetch — automatically injects the current user's Firebase ID token
+      async function authFetch(url, options = {}) {
+        const token = auth?.currentUser ? await auth.currentUser.getIdToken() : null;
+        const headers = { ...(options.headers || {}) };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        return fetch(url, { ...options, headers });
+      }
+
       // App ID usually comes from the environment, defaulting here for local use
       const appId = "case-note-app-v1";
 
@@ -194,6 +224,9 @@ import UserManagement from './components/UserManagement';
 			            "Monitored Visit",
 			            "Cancelled by Parent",
 			            "Cancelled by Worker",
+			            "Cancelled for Weather",
+			            "Cancelled by Team",
+			            "Cancelled No Confirmation",
 			          ],
 			        },
         { id: "master_case", name: "Master Case #", type: "text" },
@@ -232,6 +265,24 @@ import UserManagement from './components/UserManagement';
         { id: "new_patch_applied", name: "Was a new patch applied?", type: "select", options: ["Yes", "No"] },
         { id: "client_willing_continue", name: "Was the client willing to continue?", type: "select", options: ["Yes", "No"] },
         { id: "test_mailed", name: "Was the test mailed for confirmation?", type: "select", options: ["Yes", "No"] },
+        { id: "sp_date_sent", name: "Date Test Sent", type: "date" },
+        // DST-SP Results fields (entered later when results come back)
+        {
+          id: "sp_test_result",
+          name: "Sweat Patch Result",
+          type: "select",
+          options: ["Negative", "Positive", "Tampered"]
+        },
+        { id: "sp_client_admitted_use", name: "Did the client admit to using?", type: "select", options: ["Yes", "No"] },
+        { id: "sp_non_admission_explanation", name: "If client did not admit, document explanation", type: "textarea" },
+        {
+          id: "sp_drugs_tested_positive",
+          name: "Drugs Tested Positive For (select all that apply)",
+          type: "multiselect",
+          options: ["Alcohol", "Amphetamines", "Barbiturates", "Benzodiazepines", "Buprenorphine", "Cocaine", "EDDP (Methadone Metabolite)", "Fentanyl", "Marijuana (THC)", "MDMA (Ecstasy)", "Methadone", "Methamphetamine", "Opiates", "Oxycodone", "Phencyclidine (PCP)", "Tramadol", "Tricyclic Antidepressants", "Other"]
+        },
+        { id: "sp_other_drug_specify", name: "If Other, please specify", type: "text" },
+        { id: "sp_tampered_explanation", name: "Document tampered circumstances", type: "textarea" },
 
         // DST-U (Urinalysis) and DST-MS (Mouth Swab) specific fields
         {
@@ -251,6 +302,11 @@ import UserManagement from './components/UserManagement';
         { id: "other_drug_specify", name: "If Other, please specify", type: "text" },
         { id: "refusal_reason", name: "Document refusal reason/circumstances", type: "textarea" },
 
+        // Lab submission fields (all drug testing types)
+        { id: "sent_to_lab", name: "Sent to Lab?", type: "select", options: ["Yes", "No"] },
+        { id: "not_sent_to_lab_reason", name: "Reason Not Sent to Lab", type: "textarea" },
+        { id: "lab_result_text", name: "Lab Results", type: "textarea" },
+
         // Legacy fields kept for backward compatibility
 	        { id: "client_admission", name: "Client Admissions", type: "textarea" },
 	        { id: "engagement", name: "Engagement/Support", type: "textarea" },
@@ -262,6 +318,7 @@ import UserManagement from './components/UserManagement';
 	        { id: "cancellation_will_makeup", name: "Will this visit be made up?", type: "select", options: ["Yes", "No"] },
 	        { id: "cancellation_makeup_date", name: "When will the visit be made up?", type: "text" },
 	        { id: "cancellation_no_makeup_reason", name: "Why will the visit not be made up?", type: "textarea" },
+	        { id: "weather_explanation", name: "Weather Explanation", type: "textarea" },
 	      ];
 
 	      const SERVICE_CONFIGS = {
@@ -270,8 +327,8 @@ import UserManagement from './components/UserManagement';
 	        IHFS: ["participants", "visit_narrative", "safety_concern_present", "interventions", "plan"],
 	        PTSV: ["participants", "visit_narrative", "interactions", "parenting_skills", "safety_concern_present", "interventions", "plan"],
 	        "PTSV-C": ["participants", "visit_narrative", "interactions", "parenting_skills", "safety_concern_present", "interventions", "plan"],
-	        // DST-SP: Sweat Patch - chain of custody + patch-specific fields
-	        "DST-SP": ["chain_of_custody", "patch_removed", "new_patch_applied", "client_willing_continue", "test_mailed"],
+	        // DST-SP: Sweat Patch - chain of custody + patch-specific fields + date sent + results
+	        "DST-SP": ["chain_of_custody", "patch_removed", "new_patch_applied", "client_willing_continue", "test_mailed", "sp_date_sent", "sp_test_result"],
 	        // DST-U: Urinalysis - chain of custody + test result with conditional fields
 	        "DST-U": ["chain_of_custody", "test_result"],
 	        // DST-MS: Mouth Swab - same as urinalysis
@@ -297,46 +354,6 @@ import UserManagement from './components/UserManagement';
 	      };
 
       // --- UI Helpers ---
-      const LucideIcon = ({ name, className = "" }) => {
-        const IconComponent = LucideIcons[name];
-        if (!IconComponent) return <span aria-hidden="true" />;
-        return <IconComponent className={className} aria-hidden="true" />;
-      };
-
-      const Button = ({
-        children,
-        onClick,
-        variant = "primary",
-        className = "",
-        iconName,
-        disabled = false,
-        title = "",
-        type = "button",
-      }) => {
-        const baseStyle =
-          "flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
-
-	        const variants = {
-	          primary:
-	            "bg-[var(--brand-navy)] text-white hover:bg-[var(--brand-navy-700)] focus:ring-[var(--brand-navy)] shadow-sm",
-	          secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-500 shadow-sm",
-	          danger: "bg-red-50 text-red-700 hover:bg-red-100 focus:ring-red-500 border border-red-200",
-	          ghost: "text-gray-500 hover:text-gray-700 hover:bg-gray-100",
-	        };
-
-        return (
-          <button
-            type={type}
-            onClick={onClick}
-            disabled={disabled}
-            className={`${baseStyle} ${variants[variant]} ${className}`}
-            title={title}
-          >
-            {iconName && <LucideIcon name={iconName} className="w-5 h-5 mr-2" />}
-            {children}
-          </button>
-        );
-      };
 
       const InputField = ({ label, type = "text", value, onChange, placeholder, required = false, options = [], children, ariaLabel, ariaDescribedBy }) => {
         const baseClass =
@@ -522,7 +539,7 @@ import UserManagement from './components/UserManagement';
               setState("transcribing");
               const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
               const dataUrl = await blobToDataUrl(blob);
-              const resp = await fetch("/api/transcribe", {
+              const resp = await authFetch("/api/transcribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -991,8 +1008,18 @@ import UserManagement from './components/UserManagement';
 		      }) {
 		        const [showDischargeModal, setShowDischargeModal] = useState(false);
 		        const GENDER_OPTIONS = ["Male", "Female", "Other"];
-		        const AGE_RANGE_OPTIONS = ["0-5", "6-10", "11-14", "15-19"];
+		        const AGE_RANGE_OPTIONS = ["0-5", "6-12", "13-19"];
 		        const POVERTY_LEVEL_OPTIONS = ["Below Poverty Level", "At Poverty Level", "Above Poverty Level"];
+		        const PARENT_RELATIONSHIP_OPTIONS = ["Mother", "Father", "Guardian", "Other"];
+		        const HOUSEHOLD_TYPE_OPTIONS = ["Single Mother", "Single Father", "Two Parent", "Guardian/Other"];
+		        const PARENT_AGE_RANGE_OPTIONS = ["19-25", "26-35", "36-45", "46+"];
+		        const migrateAgeRange = (val) => {
+		          const v = String(val || "").trim();
+		          if (v === "6-10") return "6-12";
+		          if (v === "11-14") return "";
+		          if (v === "15-19") return "13-19";
+		          return v;
+		        };
 		        const UNITS_PERIOD_OPTIONS = [
 		          { value: "weekly", label: "Per Week" },
 		          { value: "monthly", label: "Per Month" },
@@ -1005,6 +1032,7 @@ import UserManagement from './components/UserManagement';
 		          CFSS: "",
 		          Typical_Location: "",
 		          Poverty_Level: "",
+		          Household_Type: "",
 		          Authorized_Units: "",
 		          Units_Per_Week: "",
 		          Auth_Start_Date: "",
@@ -1017,6 +1045,13 @@ import UserManagement from './components/UserManagement';
 		          Parent_2_Gender: "",
 		          Parent_3: "",
 		          Parent_3_Gender: "",
+		          Parent_1_Relationship: "",
+		          Parent_1_Age_Range: "",
+		          Parent_2_Relationship: "",
+		          Parent_2_Age_Range: "",
+		          Parent_3_Relationship: "",
+		          Parent_3_Age_Range: "",
+		          Head_of_Household: "",
 		          Child_1: "",
 		          Child_1_Gender: "",
 		          Child_1_Age_Range: "",
@@ -1367,27 +1402,35 @@ import UserManagement from './components/UserManagement';
 	            Parent_2_Gender: selected.raw?.Parent_2_Gender || "",
 	            Parent_3: selected.raw?.Parent_3 || "",
 	            Parent_3_Gender: selected.raw?.Parent_3_Gender || "",
+	            Parent_1_Relationship: selected.raw?.Parent_1_Relationship || "",
+	            Parent_1_Age_Range: selected.raw?.Parent_1_Age_Range || "",
+	            Parent_2_Relationship: selected.raw?.Parent_2_Relationship || "",
+	            Parent_2_Age_Range: selected.raw?.Parent_2_Age_Range || "",
+	            Parent_3_Relationship: selected.raw?.Parent_3_Relationship || "",
+	            Parent_3_Age_Range: selected.raw?.Parent_3_Age_Range || "",
+	            Head_of_Household: selected.raw?.Head_of_Household || "",
+	            Household_Type: selected.raw?.Household_Type || "",
 	            Child_1: selected.raw?.Child_1 || "",
 	            Child_1_Gender: selected.raw?.Child_1_Gender || "",
-	            Child_1_Age_Range: selected.raw?.Child_1_Age_Range || "",
+	            Child_1_Age_Range: migrateAgeRange(selected.raw?.Child_1_Age_Range),
 	            Child_2: selected.raw?.Child_2 || "",
 	            Child_2_Gender: selected.raw?.Child_2_Gender || "",
-	            Child_2_Age_Range: selected.raw?.Child_2_Age_Range || "",
+	            Child_2_Age_Range: migrateAgeRange(selected.raw?.Child_2_Age_Range),
 	            Child_3: selected.raw?.Child_3 || "",
 	            Child_3_Gender: selected.raw?.Child_3_Gender || "",
-	            Child_3_Age_Range: selected.raw?.Child_3_Age_Range || "",
+	            Child_3_Age_Range: migrateAgeRange(selected.raw?.Child_3_Age_Range),
 	            Child_4: selected.raw?.Child_4 || "",
 	            Child_4_Gender: selected.raw?.Child_4_Gender || "",
-	            Child_4_Age_Range: selected.raw?.Child_4_Age_Range || "",
+	            Child_4_Age_Range: migrateAgeRange(selected.raw?.Child_4_Age_Range),
 	            Child_5: selected.raw?.Child_5 || "",
 	            Child_5_Gender: selected.raw?.Child_5_Gender || "",
-	            Child_5_Age_Range: selected.raw?.Child_5_Age_Range || "",
+	            Child_5_Age_Range: migrateAgeRange(selected.raw?.Child_5_Age_Range),
 	            Child_6: selected.raw?.Child_6 || "",
 	            Child_6_Gender: selected.raw?.Child_6_Gender || "",
-	            Child_6_Age_Range: selected.raw?.Child_6_Age_Range || "",
+	            Child_6_Age_Range: migrateAgeRange(selected.raw?.Child_6_Age_Range),
 	            Child_7: selected.raw?.Child_7 || "",
 	            Child_7_Gender: selected.raw?.Child_7_Gender || "",
-	            Child_7_Age_Range: selected.raw?.Child_7_Age_Range || "",
+	            Child_7_Age_Range: migrateAgeRange(selected.raw?.Child_7_Age_Range),
 	            goalsText: selected.goalsText || "",
 	            // Discharge/Archive fields
 	            is_archived: selected.raw?.is_archived || false,
@@ -1524,11 +1567,11 @@ import UserManagement from './components/UserManagement';
 	                    type="select"
 	                    value={selectedProfileKey}
 	                    onChange={(e) => onSelectProfileKey(e.target.value)}
-	                    options={familyDirectoryOptions.map((o) => ({
+	                    options={activeFamilyDirectoryOptions.map((o) => ({
 	                      value: o.key,
 	                      label: o.mcNumber
-	                        ? `${o.caseName} (${o.mcNumber})${o.isArchived ? " [Archived]" : ""}`
-	                        : `${o.caseName}${o.isArchived ? " [Archived]" : ""}`,
+	                        ? `${o.caseName} (${o.mcNumber})`
+	                        : o.caseName,
 	                    }))}
 	                  />
 	                </div>
@@ -1556,6 +1599,13 @@ import UserManagement from './components/UserManagement';
 	                  value={draft.Poverty_Level}
 	                  onChange={(e) => setDraft((p) => ({ ...p, Poverty_Level: e.target.value }))}
 	                  options={POVERTY_LEVEL_OPTIONS.map((p) => ({ value: p, label: p }))}
+	                />
+	                <InputField
+	                  label="Household Type"
+	                  type="select"
+	                  value={draft.Household_Type}
+	                  onChange={(e) => setDraft((p) => ({ ...p, Household_Type: e.target.value }))}
+	                  options={HOUSEHOLD_TYPE_OPTIONS.map((h) => ({ value: h, label: h }))}
 	                />
 	              </div>
 	              <div className="mt-4">
@@ -2350,7 +2400,10 @@ import UserManagement from './components/UserManagement';
 	                    <tr className="bg-slate-100">
 	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-16">#</th>
 	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200">Name</th>
-	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-40">Gender</th>
+	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-32">Gender</th>
+	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-36">Relationship</th>
+	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-32">Age Range</th>
+	                      <th className="text-left text-xs font-semibold text-gray-600 uppercase px-4 py-3 border border-slate-200 w-16">HoH</th>
 	                    </tr>
 	                  </thead>
 	                  <tbody>
@@ -2374,6 +2427,35 @@ import UserManagement from './components/UserManagement';
 	                            <option value="">-- Select --</option>
 	                            {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
 	                          </select>
+	                        </td>
+	                        <td className="px-2 py-2 border border-slate-200">
+	                          <select
+	                            value={draft[`Parent_${n}_Relationship`] || ""}
+	                            onChange={(e) => setDraft((p) => ({ ...p, [`Parent_${n}_Relationship`]: e.target.value }))}
+	                            className="w-full px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-[var(--brand-navy)] focus:border-[var(--brand-navy)] text-gray-900 bg-white"
+	                          >
+	                            <option value="">-- Select --</option>
+	                            {PARENT_RELATIONSHIP_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+	                          </select>
+	                        </td>
+	                        <td className="px-2 py-2 border border-slate-200">
+	                          <select
+	                            value={draft[`Parent_${n}_Age_Range`] || ""}
+	                            onChange={(e) => setDraft((p) => ({ ...p, [`Parent_${n}_Age_Range`]: e.target.value }))}
+	                            className="w-full px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-[var(--brand-navy)] focus:border-[var(--brand-navy)] text-gray-900 bg-white"
+	                          >
+	                            <option value="">-- Select --</option>
+	                            {PARENT_AGE_RANGE_OPTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+	                          </select>
+	                        </td>
+	                        <td className="px-2 py-2 border border-slate-200 text-center">
+	                          <input
+	                            type="radio"
+	                            name="head_of_household"
+	                            checked={draft.Head_of_Household === String(n)}
+	                            onChange={() => setDraft((p) => ({ ...p, Head_of_Household: String(n) }))}
+	                            className="w-4 h-4 text-[var(--brand-navy)] focus:ring-[var(--brand-navy)]"
+	                          />
 	                        </td>
 	                      </tr>
 	                    ))}
@@ -2642,11 +2724,13 @@ import UserManagement from './components/UserManagement';
 	      }
 
       // --- Main Application ---
+      // Keep in sync with ADMIN_EMAILS env var used server-side in api/createUser.js
       const ADMIN_EMAILS = ["bhinrichs1380@gmail.com"];
       const ALLOWED_DOMAIN = "epworthfamilyresources.org";
       const ALLOWED_EMAILS = [
-        // Add additional allowed Google emails here
-        // "user@example.com",
+        "raquelfm.dean@gmail.com",
+        "mburgessefr@gmail.com",
+        "lrobinsonefr@gmail.com",
       ];
 
       const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
@@ -2690,6 +2774,7 @@ import UserManagement from './components/UserManagement';
 		      function App() {
 	        const [user, setUser] = useState(null);
 	        const [activeTab, setActiveTab] = useState("form");
+	        const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	        const [entries, setEntries] = useState([]);
 
 	        // Check if current user is an admin
@@ -2787,6 +2872,7 @@ import UserManagement from './components/UserManagement';
 	        const [historyClientKey, setHistoryClientKey] = useState("");
 	        const [historyDateStart, setHistoryDateStart] = useState("");
 	        const [historyDateEnd, setHistoryDateEnd] = useState("");
+	        const [historyServiceFilter, setHistoryServiceFilter] = useState("");
 	        const [selectedEntryIds, setSelectedEntryIds] = useState({});
 	        const [printHtml, setPrintHtml] = useState("");
 	        const [authReady, setAuthReady] = useState(false);
@@ -2808,12 +2894,29 @@ import UserManagement from './components/UserManagement';
         const [adminGoalsDraft, setAdminGoalsDraft] = useState([]);
         const [selectedProfileKey, setSelectedProfileKey] = useState("");
         const [historyMode, setHistoryMode] = useState("entries"); // "entries" | "profiles"
+        const [adminSubTab, setAdminSubTab] = useState("overview"); // "overview" | "clients" | "data"
+        const [adminExpandedSections, setAdminExpandedSections] = useState({});
         // Reports state
         const [reportMonth, setReportMonth] = useState(new Date().getMonth());
         const [reportYear, setReportYear] = useState(new Date().getFullYear());
         const [reportFamilyFilter, setReportFamilyFilter] = useState(""); // "" = all families
         const [aiReportType, setAiReportType] = useState("monthly-summary"); // AI report type selector
         const [aiReportLoading, setAiReportLoading] = useState(false);
+        // AI Case Analysis state
+        const [caseAnalysisFamily, setCaseAnalysisFamily] = useState("");
+        const [caseAnalysisLoading, setCaseAnalysisLoading] = useState(false);
+        const [caseAnalysisResult, setCaseAnalysisResult] = useState("");
+        const [labResultLoading, setLabResultLoading] = useState(false);
+        // Bulk Edit state (hoisted to parent to survive re-renders)
+        const [bulkStartDate, setBulkStartDate] = useState("");
+        const [bulkEndDate, setBulkEndDate] = useState("");
+        const [bulkClientKey, setBulkClientKey] = useState("");
+        const [bulkExpandedWorkers, setBulkExpandedWorkers] = useState({});
+        const [bulkEditingEntryId, setBulkEditingEntryId] = useState(null);
+        const [bulkEditFormData, setBulkEditFormData] = useState({});
+        const [bulkSaving, setBulkSaving] = useState(false);
+        const [bulkStatus, setBulkStatus] = useState("");
+        const bulkAutoSaveTimeoutRef = useRef(null);
         // Non-Billable Contacts state
         const [nonBillableContacts, setNonBillableContacts] = useState([]);
         const [loadingContacts, setLoadingContacts] = useState(true);
@@ -2888,7 +2991,7 @@ import UserManagement from './components/UserManagement';
 	          try {
 	            setImportInProgress(true);
 	            setImportStatus("AI parsing…");
-	            const resp = await fetch("/api/parseProfile", {
+	            const resp = await authFetch("/api/parseProfile", {
 	              method: "POST",
 	              headers: { "Content-Type": "application/json" },
 	              body: JSON.stringify({ text: inputText, hint }),
@@ -2921,7 +3024,7 @@ import UserManagement from './components/UserManagement';
 	            setParsingCaseNote(true);
 	            setAiParseError("");
 
-	            const resp = await fetch("/api/parseCaseNote", {
+	            const resp = await authFetch("/api/parseCaseNote", {
 	              method: "POST",
 	              headers: { "Content-Type": "application/json" },
 	              body: JSON.stringify({ text: inputText, hint }),
@@ -2948,7 +3051,7 @@ import UserManagement from './components/UserManagement';
 
 	        const applyCaseNoteParse = async () => {
 	          // Collect all available goals from profiles to help AI match them
-	          const allAvailableGoals = familyDirectoryOptions.flatMap((profile) => {
+	          const allAvailableGoals = activeFamilyDirectoryOptions.flatMap((profile) => {
 	            const goals = profile.goals || [];
 	            return goals.map((goalText, idx) => ({
 	              key: `goal_${profile.key}_${idx}`,
@@ -2996,6 +3099,7 @@ import UserManagement from './components/UserManagement';
 	          if (parsed.cancellation_service_prep) updates.cancellation_service_prep = parsed.cancellation_service_prep;
 	          if (parsed.cancellation_pre_call) updates.cancellation_pre_call = parsed.cancellation_pre_call;
 	          if (parsed.cancellation_en_route) updates.cancellation_en_route = parsed.cancellation_en_route;
+	          if (parsed.weather_explanation) updates.weather_explanation = parsed.weather_explanation;
 
 	          // Try to match parsed family_name or master_case to an existing profile
 	          // This ensures the entry gets properly linked via family_directory_key
@@ -3005,11 +3109,11 @@ import UserManagement from './components/UserManagement';
 
 	          // First try to match by master case number (most reliable)
 	          if (parsedCase) {
-	            matchedProfile = familyDirectoryOptions.find((o) => normalize(o.mcNumber) === parsedCase);
+	            matchedProfile = activeFamilyDirectoryOptions.find((o) => normalize(o.mcNumber) === parsedCase);
 	          }
 	          // Then try to match by family name (case-insensitive)
 	          if (!matchedProfile && parsedName) {
-	            matchedProfile = familyDirectoryOptions.find((o) => normalize(o.caseName).toLowerCase() === parsedName);
+	            matchedProfile = activeFamilyDirectoryOptions.find((o) => normalize(o.caseName).toLowerCase() === parsedName);
 	          }
 
 	          if (matchedProfile) {
@@ -3278,6 +3382,7 @@ import UserManagement from './components/UserManagement';
             CFSS: normalize(profile.CFSS) || null,
             Typical_Location: normalize(profile.Typical_Location) || null,
             Poverty_Level: normalize(profile.Poverty_Level) || null,
+            Household_Type: normalize(profile.Household_Type) || null,
             Authorized_Units: parseFloat(profile.Authorized_Units) || null,
             Units_Per_Week: parseFloat(profile.Units_Per_Week) || null,
             Auth_Start_Date: normalize(profile.Auth_Start_Date) || null,
@@ -3289,6 +3394,13 @@ import UserManagement from './components/UserManagement';
             Parent_2_Gender: normalize(profile.Parent_2_Gender) || null,
             Parent_3: normalize(profile.Parent_3) || null,
             Parent_3_Gender: normalize(profile.Parent_3_Gender) || null,
+            Parent_1_Relationship: normalize(profile.Parent_1_Relationship) || null,
+            Parent_1_Age_Range: normalize(profile.Parent_1_Age_Range) || null,
+            Parent_2_Relationship: normalize(profile.Parent_2_Relationship) || null,
+            Parent_2_Age_Range: normalize(profile.Parent_2_Age_Range) || null,
+            Parent_3_Relationship: normalize(profile.Parent_3_Relationship) || null,
+            Parent_3_Age_Range: normalize(profile.Parent_3_Age_Range) || null,
+            Head_of_Household: normalize(profile.Head_of_Household) || null,
             Child_1: normalize(profile.Child_1) || null,
             Child_1_Gender: normalize(profile.Child_1_Gender) || null,
             Child_1_Age_Range: normalize(profile.Child_1_Age_Range) || null,
@@ -3346,7 +3458,7 @@ import UserManagement from './components/UserManagement';
           }
 
           // Log audit event for profile save
-          logAuditEvent(
+          await logAuditEvent(
             existingDocId ? "updated" : "created",
             "profile",
             {
@@ -3382,7 +3494,7 @@ import UserManagement from './components/UserManagement';
 
           // Log audit event for profile deletion
           const deletedProfile = caseDirectory.find(p => normalize(p.id) === key || normalize(p.Family_ID) === key);
-          logAuditEvent("deleted", "profile", {
+          await logAuditEvent("deleted", "profile", {
             profile_id: key,
             case_name: deletedProfile?.Case_Name || key,
           });
@@ -3440,6 +3552,8 @@ import UserManagement from './components/UserManagement';
             })
             .finally(() => {
               auth.getRedirectResult().catch((error) => {
+                // Ignore "missing initial state" errors in WebView environments
+                if (error?.message?.includes("missing initial state")) return;
                 console.error("Redirect result error:", error);
                 setAuthError(error?.message || "Redirect sign-in error");
               });
@@ -3484,14 +3598,28 @@ import UserManagement from './components/UserManagement';
           return () => unsubscribe();
         }, []);
 
-        const linkOrSignInWithGooglePopup = async () => {
+        // Detect Android WebView (user agent lacks "; wv" since we strip it,
+        // but we can check for the Android app package or a custom flag)
+        const isAndroidWebView = /Android/.test(navigator.userAgent) && /Version\/[\d.]+/.test(navigator.userAgent);
+
+        const linkOrSignInWithGoogle = async () => {
           if (!auth) return;
           setAuthError("");
           try {
-            if (auth.currentUser && auth.currentUser.isAnonymous) {
-              await auth.currentUser.linkWithPopup(googleProvider);
+            if (isAndroidWebView) {
+              // Use redirect in WebView — popup doesn't work
+              if (auth.currentUser && auth.currentUser.isAnonymous) {
+                await auth.currentUser.linkWithRedirect(googleProvider);
+              } else {
+                await auth.signInWithRedirect(googleProvider);
+              }
             } else {
-              await auth.signInWithPopup(googleProvider);
+              // Use popup on desktop/mobile browsers
+              if (auth.currentUser && auth.currentUser.isAnonymous) {
+                await auth.currentUser.linkWithPopup(googleProvider);
+              } else {
+                await auth.signInWithPopup(googleProvider);
+              }
             }
           } catch (error) {
             console.error("Google sign-in error:", error);
@@ -3499,20 +3627,9 @@ import UserManagement from './components/UserManagement';
           }
         };
 
-        const linkOrSignInWithGoogleRedirect = async () => {
-          if (!auth) return;
-          setAuthError("");
-          try {
-            if (auth.currentUser && auth.currentUser.isAnonymous) {
-              await auth.currentUser.linkWithRedirect(googleProvider);
-            } else {
-              await auth.signInWithRedirect(googleProvider);
-            }
-          } catch (error) {
-            console.error("Google redirect error:", error);
-            setAuthError(error?.message || "Google redirect sign-in error");
-          }
-        };
+        // Keep these as aliases for any other references
+        const linkOrSignInWithGooglePopup = linkOrSignInWithGoogle;
+        const linkOrSignInWithGoogleRedirect = linkOrSignInWithGoogle;
 
         // Email/password sign-in disabled (Google-only access)
 
@@ -3558,15 +3675,24 @@ import UserManagement from './components/UserManagement';
         };
 
         const BulkEditView = () => {
-          const [startDate, setStartDate] = useState("");
-          const [endDate, setEndDate] = useState("");
-          const [clientKey, setClientKey] = useState("");
-          const [expandedWorkers, setExpandedWorkers] = useState({});
-          const [saving, setSaving] = useState(false);
-          const [status, setStatus] = useState("");
-          const [editingEntryId, setEditingEntryId] = useState(null);
-          const [editFormData, setEditFormData] = useState({});
-          const autoSaveTimeoutRef = useRef(null);
+          // Use hoisted state from parent to survive re-renders
+          const startDate = bulkStartDate;
+          const setStartDate = setBulkStartDate;
+          const endDate = bulkEndDate;
+          const setEndDate = setBulkEndDate;
+          const clientKey = bulkClientKey;
+          const setClientKey = setBulkClientKey;
+          const expandedWorkers = bulkExpandedWorkers;
+          const setExpandedWorkers = setBulkExpandedWorkers;
+          const saving = bulkSaving;
+          const setSaving = setBulkSaving;
+          const status = bulkStatus;
+          const setStatus = setBulkStatus;
+          const editingEntryId = bulkEditingEntryId;
+          const setEditingEntryId = setBulkEditingEntryId;
+          const editFormData = bulkEditFormData;
+          const setEditFormData = setBulkEditFormData;
+          const autoSaveTimeoutRef = bulkAutoSaveTimeoutRef;
 
           const parseDate = (value) => {
             if (!value) return null;
@@ -3591,7 +3717,8 @@ import UserManagement from './components/UserManagement';
             .filter((e) => {
               if (!start && !end) return true;
               return inRange(e.date, start, end);
-            });
+            })
+            .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
           // Group entries by worker
           const groups = filteredEntries.reduce((acc, entry) => {
@@ -3633,6 +3760,18 @@ import UserManagement from './components/UserManagement';
               safety_concern_present: entry.safety_concern_present || "No",
               safety_concern_description: entry.safety_concern_description || "",
               safety_concern_addressed: entry.safety_concern_addressed || "",
+              // Sweat patch results fields
+              sp_date_sent: entry.sp_date_sent || "",
+              sp_test_result: entry.sp_test_result || "",
+              sp_client_admitted_use: entry.sp_client_admitted_use || "",
+              sp_non_admission_explanation: entry.sp_non_admission_explanation || "",
+              sp_drugs_tested_positive: entry.sp_drugs_tested_positive || "",
+              sp_other_drug_specify: entry.sp_other_drug_specify || "",
+              sp_tampered_explanation: entry.sp_tampered_explanation || "",
+              // Lab submission fields
+              sent_to_lab: entry.sent_to_lab || "",
+              not_sent_to_lab_reason: entry.not_sent_to_lab_reason || "",
+              lab_result_text: entry.lab_result_text || "",
             });
           };
 
@@ -3664,6 +3803,34 @@ import UserManagement from './components/UserManagement';
               setStatus(`Save failed: ${err?.message || err}`);
             } finally {
               setSaving(false);
+            }
+          };
+
+          // Handle lab result image upload and OCR extraction
+          const handleLabImageUpload = async (file) => {
+            if (!file) return;
+            setLabResultLoading(true);
+            try {
+              const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+              });
+              const resp = await authFetch("/api/parseLabResult", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ imageBase64: base64 }),
+              });
+              const data = await resp.json();
+              if (data.error) throw new Error(data.error);
+              handleInputChange("lab_result_text", data.text || "");
+              // Auto-set sent_to_lab to Yes when a lab screenshot is uploaded
+              handleInputChange("sent_to_lab", "Yes");
+            } catch (err) {
+              alert("Failed to extract lab results: " + (err?.message || err));
+            } finally {
+              setLabResultLoading(false);
             }
           };
 
@@ -3763,7 +3930,7 @@ import UserManagement from './components/UserManagement';
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
                     >
                       <option value="">All Clients</option>
-                      {familyDirectoryOptions.map((o) => (
+                      {activeFamilyDirectoryOptions.map((o) => (
                         <option key={o.key} value={o.key}>
                           {o.mcNumber ? `${o.caseName} (${o.mcNumber})` : o.caseName}
                         </option>
@@ -3831,9 +3998,9 @@ import UserManagement from './components/UserManagement';
                                           {/* Header with entry info (read-only) */}
                                           <div className="flex items-center justify-between pb-2 border-b border-blue-200">
                                             <div>
-                                              <div className="font-semibold text-gray-800">{entry.family_name || "Unknown Family"}</div>
+                                              <div className="font-semibold text-gray-800">{normalize(entry.family_name) || "Unknown Family"}</div>
                                               <div className="text-xs text-gray-500">
-                                                {entry.date} • {entry.service_type} • {entry.contact_type} • {entry.master_case || "No Case #"}
+                                                {normalize(entry.date)} • {normalize(entry.service_type)} • {normalize(entry.contact_type)} • {normalize(entry.master_case) || "No Case #"}
                                               </div>
                                             </div>
                                             <button
@@ -3843,6 +4010,37 @@ import UserManagement from './components/UserManagement';
                                             >
                                               <LucideIcon name="X" className="w-5 h-5" />
                                             </button>
+                                          </div>
+
+                                          {/* Date & Time Fields */}
+                                          <div className="grid grid-cols-3 gap-3">
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-700 mb-1">Date</label>
+                                              <input
+                                                type="date"
+                                                value={editFormData.date || ""}
+                                                onChange={(e) => handleFieldChange("date", e.target.value)}
+                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-700 mb-1">Start Time</label>
+                                              <input
+                                                type="time"
+                                                value={editFormData.start_time || ""}
+                                                onChange={(e) => handleFieldChange("start_time", e.target.value)}
+                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-700 mb-1">End Time</label>
+                                              <input
+                                                type="time"
+                                                value={editFormData.end_time || ""}
+                                                onChange={(e) => handleFieldChange("end_time", e.target.value)}
+                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              />
+                                            </div>
                                           </div>
 
                                           {/* Narrative Fields - Based on Service Type */}
@@ -3908,6 +4106,78 @@ import UserManagement from './components/UserManagement';
                                                 placeholder="Plan and next steps..."
                                               />
                                             </div>
+
+                                            {/* DST-SP Sweat Patch Results - inline edit */}
+                                            {entry.service_type === "DST-SP" && (
+                                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-3">
+                                                <label className="block text-xs font-bold text-purple-800 uppercase">Sweat Patch Results</label>
+                                                <div>
+                                                  <label className="block text-xs font-semibold text-gray-700 mb-1">Result</label>
+                                                  <select
+                                                    value={editFormData.sp_test_result || ""}
+                                                    onChange={(e) => handleFieldChange("sp_test_result", e.target.value)}
+                                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                                  >
+                                                    <option value="">-- Select Result --</option>
+                                                    <option value="Negative">Negative</option>
+                                                    <option value="Positive">Positive</option>
+                                                    <option value="Tampered">Tampered</option>
+                                                  </select>
+                                                </div>
+
+                                                {editFormData.sp_test_result === "Positive" && (
+                                                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-2">
+                                                    <div>
+                                                      <label className="block text-xs font-semibold text-gray-700 mb-1">Did client admit to using?</label>
+                                                      <select
+                                                        value={editFormData.sp_client_admitted_use || ""}
+                                                        onChange={(e) => handleFieldChange("sp_client_admitted_use", e.target.value)}
+                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                                      >
+                                                        <option value="">-- Select --</option>
+                                                        <option value="Yes">Yes</option>
+                                                        <option value="No">No</option>
+                                                      </select>
+                                                    </div>
+                                                    {editFormData.sp_client_admitted_use === "No" && (
+                                                      <div>
+                                                        <label className="block text-xs font-semibold text-gray-700 mb-1">Non-admission explanation</label>
+                                                        <textarea
+                                                          value={editFormData.sp_non_admission_explanation || ""}
+                                                          onChange={(e) => handleFieldChange("sp_non_admission_explanation", e.target.value)}
+                                                          rows={2}
+                                                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                                          placeholder="Why the client did not admit..."
+                                                        />
+                                                      </div>
+                                                    )}
+                                                    <div>
+                                                      <label className="block text-xs font-semibold text-gray-700 mb-1">Drugs tested positive for</label>
+                                                      <input
+                                                        type="text"
+                                                        value={editFormData.sp_drugs_tested_positive || ""}
+                                                        onChange={(e) => handleFieldChange("sp_drugs_tested_positive", e.target.value)}
+                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                                        placeholder="e.g. Marijuana (THC), Methamphetamine"
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                )}
+
+                                                {editFormData.sp_test_result === "Tampered" && (
+                                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                                    <label className="block text-xs font-semibold text-orange-800 mb-1">Tampered circumstances (counts as positive)</label>
+                                                    <textarea
+                                                      value={editFormData.sp_tampered_explanation || ""}
+                                                      onChange={(e) => handleFieldChange("sp_tampered_explanation", e.target.value)}
+                                                      rows={2}
+                                                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                                      placeholder="Document tampering circumstances..."
+                                                    />
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
                                           </div>
 
                                           <div className="text-xs text-blue-600 flex items-center gap-1 pt-2 border-t border-blue-200">
@@ -3920,10 +4190,20 @@ import UserManagement from './components/UserManagement';
                                         <div className="flex items-center justify-between">
                                           <div className="flex-1">
                                             <div className="font-medium text-gray-800">
-                                              {entry.family_name || "Unknown Family"}
+                                              {normalize(entry.family_name) || "Unknown Family"}
                                             </div>
                                             <div className="text-xs text-gray-500 mt-0.5">
-                                              {entry.date} • {entry.service_type || "No Service Type"} • {entry.master_case || "No Case #"}
+                                              {normalize(entry.date)} • {normalize(entry.service_type) || "No Service Type"} • {normalize(entry.master_case) || "No Case #"}
+                                              {entry.service_type === "DST-SP" && (
+                                                <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                  entry.sp_test_result === "Negative" ? "bg-green-100 text-green-700" :
+                                                  entry.sp_test_result === "Positive" ? "bg-red-100 text-red-700" :
+                                                  entry.sp_test_result === "Tampered" ? "bg-orange-100 text-orange-700" :
+                                                  "bg-purple-100 text-purple-700"
+                                                }`}>
+                                                  {entry.sp_test_result || "Results Pending"}
+                                                </span>
+                                              )}
                                             </div>
                                           </div>
                                           <div className="flex items-center gap-1">
@@ -4281,7 +4561,11 @@ import UserManagement from './components/UserManagement';
 	          // If entry has a family_directory_key, use it as the primary match (most reliable)
 	          const entryDirKey = normalize(entry?.family_directory_key);
 	          if (entryDirKey) {
-	            return entryDirKey === ck;
+	            // Direct match or backward compat (old entries stored familyId/mcNumber as key)
+	            if (entryDirKey === ck) return true;
+	            const profile = familyDirectoryOptions.find((o) => o.key === ck);
+	            if (profile && (entryDirKey === profile.familyId || entryDirKey === profile.mcNumber)) return true;
+	            return false;
 	          }
 
 	          // For entries without family_directory_key, try to match via profile fields
@@ -4359,14 +4643,16 @@ import UserManagement from './components/UserManagement';
             const v = String(getField(rec, k) || "").trim();
             if (v) list.push(v);
           });
-          // Also allow a pre-combined Participants string if present
-          const participantsText = String(getParticipants(rec) || "").trim();
-          if (participantsText) {
-            participantsText
-              .split(/[;,]\s*|\n+/)
-              .map((p) => p.trim())
-              .filter(Boolean)
-              .forEach((p) => list.push(p));
+          // Only use the freetext Participants field as a fallback when no structured Parent/Child names exist
+          if (list.length === 0) {
+            const participantsText = String(getParticipants(rec) || "").trim();
+            if (participantsText) {
+              participantsText
+                .split(/[;,]\s*|\n+/)
+                .map((p) => p.trim())
+                .filter(Boolean)
+                .forEach((p) => list.push(p));
+            }
           }
           // Unique, preserve order
           const seen = new Set();
@@ -4424,7 +4710,7 @@ import UserManagement from './components/UserManagement';
               const participants = normalize(getParticipants(rec));
               const participantList = getProfileParticipantList(rec);
               const profileLocations = getProfileLocations(rec);
-              const key = familyId || mcNumber || normalize(rec.id);
+              const key = normalize(rec.id);
               const isArchived = rec.is_archived === true;
               const dischargeStatus = rec.discharge_status || "";
               const dischargeDate = rec.discharge_date || "";
@@ -4452,7 +4738,12 @@ import UserManagement from './components/UserManagement';
           return options;
         }, [caseDirectory, referralGoals]);
 
-        // Filtered options based on archive state
+        // Active profiles only (always excludes archived) — use everywhere except admin
+        const activeFamilyDirectoryOptions = useMemo(() => {
+          return familyDirectoryOptions.filter(o => !o.isArchived);
+        }, [familyDirectoryOptions]);
+
+        // Filtered options based on archive toggle (admin directory view)
         const filteredFamilyDirectoryOptions = useMemo(() => {
           if (showArchivedProfiles) {
             return familyDirectoryOptions.filter(o => o.isArchived);
@@ -4478,7 +4769,7 @@ import UserManagement from './components/UserManagement';
         const findCaseMatch = (data) => {
           const selectedKey = normalize(data.family_directory_key || data.family_id);
           if (selectedKey) {
-            const selected = familyDirectoryOptions.find((o) => o.key === selectedKey || o.familyId === selectedKey);
+            const selected = familyDirectoryOptions.find((o) => o.key === selectedKey || o.familyId === selectedKey || o.mcNumber === selectedKey);
             if (selected) {
               return {
                 id: selected.key,
@@ -4612,7 +4903,7 @@ import UserManagement from './components/UserManagement';
 	          if (!items.length) return "";
 	          const lines = ["DROP-INS (Monitored Visit):"];
 	          items.forEach((d, idx) => {
-	            const time = [d.start_time, d.end_time].filter(Boolean).join(" - ");
+	            const time = [d.start_time, d.end_time].filter(Boolean).map(formatTime12h).join(" - ");
 	            lines.push(`${idx + 1}. ${time || "(time not recorded)"}`.trim());
 	            if (d.narrative) lines.push(`   ${d.narrative}`);
 	            lines.push("");
@@ -4634,6 +4925,40 @@ import UserManagement from './components/UserManagement';
 	            .replace(/>/g, "&gt;")
 	            .replace(/\"/g, "&quot;")
 	            .replace(/'/g, "&#039;");
+
+        // Standardized report filename builder
+        // Format: lastname.firstname.MasterCase.service.date(monthyear)
+        const buildReportFileName = ({ familyName, mcNumber, serviceTypes, month, year, reportType }) => {
+          let lastName = "";
+          let firstName = "";
+          const name = String(familyName || "").trim();
+          if (name.includes(",")) {
+            const parts = name.split(",").map(s => s.trim());
+            lastName = parts[0] || "";
+            firstName = parts[1] || "";
+          } else {
+            const parts = name.split(/\s+/);
+            if (parts.length >= 2) {
+              firstName = parts[0];
+              lastName = parts.slice(1).join(" ");
+            } else {
+              lastName = parts[0] || "";
+            }
+          }
+          const mc = String(mcNumber || "").trim();
+          // Service types - can be a string or array
+          const svc = Array.isArray(serviceTypes)
+            ? [...new Set(serviceTypes)].filter(Boolean).join("-")
+            : String(serviceTypes || "").trim();
+          const mo = String(month || "").trim();
+          const yr = String(year || "").trim();
+          // Build date portion as monthyear (e.g. "January2026")
+          const datePart = (mo && yr) ? `${mo}${yr}` : (mo || yr || "");
+          // Sanitize parts for filename (remove problematic chars)
+          const sanitize = (s) => s.replace(/[/\\:*?"<>|]/g, "").trim();
+          const parts = [sanitize(lastName), sanitize(firstName), sanitize(mc), sanitize(svc), sanitize(datePart)].filter(Boolean);
+          return parts.join(".");
+        };
 
         const EPWORTH_LOGO_FILE = "/Epworth Family Resources logo.jpeg";
         const EPWORTH_LOGO_SRC = encodeURI(EPWORTH_LOGO_FILE);
@@ -4692,7 +5017,7 @@ import UserManagement from './components/UserManagement';
 	          const renderEntry = (entry) => {
 	            const service = entry?.service_type || "General";
 	            const contact = entry?.contact_type || "N/A";
-	            const isCancellation = ["Cancelled by Parent", "Cancelled by Worker", "Cancelled In Route"].includes(contact);
+	            const isCancellation = ["Cancelled by Parent", "Cancelled by Worker", "Cancelled for Weather", "Cancelled by Team", "Cancelled No Confirmation", "Cancelled In Route"].includes(contact);
 	            const goals = !isCancellation ? stripGoalsMarker(entry?.goals_progress || "") : "";
 	            const isMonitored = contact === "Monitored Visit";
 		            const narrativeLabel = isMonitored
@@ -4712,6 +5037,7 @@ import UserManagement from './components/UserManagement';
 	            if (isCancellation) {
 	              // Show cancellation-specific documentation
 	              const cancelParts = [];
+	              if (entry?.weather_explanation) cancelParts.push(renderField("Weather Explanation", entry.weather_explanation));
 	              if (entry?.cancellation_notification) cancelParts.push(renderField("Notification to DHHS Case Manager", entry.cancellation_notification));
 	              if (entry?.cancellation_service_prep) cancelParts.push(renderField("Service Prep (Family Support/Visitation)", entry.cancellation_service_prep));
 	              if (entry?.cancellation_pre_call) cancelParts.push(renderField("Pre-Call Attempt (Drug Testing)", entry.cancellation_pre_call));
@@ -4752,6 +5078,19 @@ import UserManagement from './components/UserManagement';
 	                  dynamicSections += `<section class="section"><div class="section-title">Safety Assessment</div><div class="section-body">No safety concerns identified.</div></section>`;
 	                }
 	              }
+
+	              // Lab submission info (drug testing)
+	              if (entry?.lab_result_text) {
+	                const svcUpper = String(entry?.service_type || "").toUpperCase();
+	                const isLabBased = svcUpper === "DST-SP" || svcUpper === "DST-HF";
+	                const labTitle = isLabBased ? "Lab Report Results" : "Lab Results";
+	                dynamicSections += `<section class="section"><div class="section-title">${labTitle}</div><div class="section-body" style="white-space:pre-wrap;font-family:inherit;font-size:9pt;line-height:1.5;">${escapeHtml(entry.lab_result_text).replace(/\n/g, "<br/>")}</div></section>`;
+	              } else if (entry?.sent_to_lab === "Yes") {
+	                dynamicSections += `<section class="section"><div class="section-title">Lab Submission</div><div class="section-body">Specimen sent to lab — results pending.</div></section>`;
+	              }
+	              if (entry?.sent_to_lab === "No" && entry?.not_sent_to_lab_reason) {
+	                dynamicSections += `<section class="section"><div class="section-title">Not Sent to Lab — Reason</div><div class="section-body">${escapeHtml(entry.not_sent_to_lab_reason).replace(/\n/g, "<br/>")}</div></section>`;
+	              }
 	            }
 
 		            const cancelBadge = isCancellation ? `<span class="cancelled-badge">Cancelled</span>` : "";
@@ -4772,7 +5111,8 @@ import UserManagement from './components/UserManagement';
 		                  <div><div class="k">Family</div><div class="v">${escapeHtml(entry?.family_name || "N/A")}</div></div>
 		                  <div><div class="k">Master Case #</div><div class="v mono">${escapeHtml(entry?.master_case || "N/A")}</div></div>
 		                  <div><div class="k">Date</div><div class="v">${escapeHtml(entry?.date || "N/A")}</div></div>
-		                  <div><div class="k">Time</div><div class="v">${escapeHtml([entry?.start_time, entry?.end_time].filter(Boolean).join(" - ") || "N/A")}</div></div>
+		                  <div><div class="k">Start Time</div><div class="v">${escapeHtml(formatTime12h(entry?.start_time) || "N/A")}</div></div>
+		                  <div><div class="k">End Time</div><div class="v">${escapeHtml(formatTime12h(entry?.end_time) || "N/A")}</div></div>
 	                  <div class="span-2"><div class="k">Location</div><div class="v">${escapeHtml(entry?.location || "N/A")}</div></div>
 	                  ${!isCancellation ? `<div class="span-2"><div class="k">Participants</div><div class="v">${escapeHtml(entry?.participants || "N/A")}</div></div>` : ""}
 	                </div>
@@ -4792,6 +5132,22 @@ import UserManagement from './components/UserManagement';
 
 		          const pagesHtml = list.map(renderEntry).join("\n");
 
+		          // Build standardized filename for case note prints
+		          const printTitle = (() => {
+		            const first = list[0];
+		            if (!first) return "Case Notes";
+		            const serviceTypes = [...new Set(list.map(e => e.service_type).filter(Boolean))];
+		            const entryDate = first.date ? new Date(first.date + "T00:00:00") : new Date();
+		            return buildReportFileName({
+		              familyName: first.family_name,
+		              mcNumber: first.master_case,
+		              serviceTypes,
+		              month: entryDate.toLocaleString("en-US", { month: "long" }),
+		              year: String(entryDate.getFullYear()),
+		              reportType: "Case Notes",
+		            });
+		          })();
+
 		          // Print via a hidden iframe so the output is a clean document (no app overlays/side tabs).
 		          const baseHref = String(window.location.href || "").replace(/[?#].*$/, "").replace(/[^/]*$/, "");
 
@@ -4802,7 +5158,7 @@ import UserManagement from './components/UserManagement';
 		                <meta charset="utf-8" />
 		                <meta name="viewport" content="width=device-width, initial-scale=1" />
 		                <base href="${escapeHtml(baseHref)}" />
-		                <title>Case Note</title>
+		                <title>${escapeHtml(printTitle)}</title>
 		                <style>
 		                  @page { size: letter; margin: 0.4in 0.5in; }
 		                  * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -5279,8 +5635,13 @@ import UserManagement from './components/UserManagement';
 
 			            const entryUnits = calculateEntryUnits();
 
+				            // Lab-based tests (Sweat Patch, Hair Follicle) always go to lab
+				            const isLabBasedEntry = ["DST-SP", "DST-HF"].includes(String(formData.service_type || "").toUpperCase());
+
 				            const newEntry = {
 				              ...formData,
+			              // Auto-set sent_to_lab for lab-based tests
+			              ...(isLabBasedEntry ? { sent_to_lab: "Yes" } : {}),
 			              dropins: normalizedDropIns,
 			              dropins_text: dropInsText,
 			              visit_narrative: isMonitoredVisit ? dropInsText : formData.visit_narrative,
@@ -5324,7 +5685,7 @@ import UserManagement from './components/UserManagement';
 				            }
 
             // Log audit event for entry save
-            logAuditEvent(
+            await logAuditEvent(
               editingEntryId ? "updated" : "created",
               "entry",
               {
@@ -5932,34 +6293,48 @@ import UserManagement from './components/UserManagement';
 
         // Export profiles to CSV
         const downloadProfilesCSV = () => {
-          if (!familyDirectoryOptions.length) {
+          if (!activeFamilyDirectoryOptions.length) {
             showToast("No profiles to export");
             return;
           }
 
           const headers = ["Family_ID", "Case_Name", "MC_Number", "CFSS", "Typical_Location",
-            "Parent_1", "Parent_2", "Parent_3",
-            "Child_1", "Child_2", "Child_3", "Child_4", "Child_5", "Child_6", "Child_7",
+            "Poverty_Level", "Household_Type",
+            "Parent_1", "Parent_1_Gender", "Parent_1_Relationship", "Parent_1_Age_Range",
+            "Parent_2", "Parent_2_Gender", "Parent_2_Relationship", "Parent_2_Age_Range",
+            "Parent_3", "Parent_3_Gender", "Parent_3_Relationship", "Parent_3_Age_Range",
+            "Head_of_Household",
+            "Child_1", "Child_1_Gender", "Child_1_Age_Range",
+            "Child_2", "Child_2_Gender", "Child_2_Age_Range",
+            "Child_3", "Child_3_Gender", "Child_3_Age_Range",
+            "Child_4", "Child_4_Gender", "Child_4_Age_Range",
+            "Child_5", "Child_5_Gender", "Child_5_Age_Range",
+            "Child_6", "Child_6_Gender", "Child_6_Age_Range",
+            "Child_7", "Child_7_Gender", "Child_7_Age_Range",
             "Goal_1", "Goal_2", "Goal_3", "Goal_4", "Goal_5", "Goal_6"].join(",");
 
-          const rows = familyDirectoryOptions.map(p => {
+          const rows = activeFamilyDirectoryOptions.map(p => {
             const goals = (p.goalsText || "").split("\n").filter(g => g.trim());
+            const r = p.raw || {};
             return [
               p.familyId || p.key || "",
               p.caseName || "",
               p.mcNumber || "",
               p.cfss || "",
               p.typicalLocation || "",
-              p.parent1 || "",
-              p.parent2 || "",
-              p.parent3 || "",
-              p.child1 || "",
-              p.child2 || "",
-              p.child3 || "",
-              p.child4 || "",
-              p.child5 || "",
-              p.child6 || "",
-              p.child7 || "",
+              r.Poverty_Level || "",
+              r.Household_Type || "",
+              p.parent1 || "", r.Parent_1_Gender || "", r.Parent_1_Relationship || "", r.Parent_1_Age_Range || "",
+              p.parent2 || "", r.Parent_2_Gender || "", r.Parent_2_Relationship || "", r.Parent_2_Age_Range || "",
+              p.parent3 || "", r.Parent_3_Gender || "", r.Parent_3_Relationship || "", r.Parent_3_Age_Range || "",
+              r.Head_of_Household || "",
+              p.child1 || "", r.Child_1_Gender || "", r.Child_1_Age_Range || "",
+              p.child2 || "", r.Child_2_Gender || "", r.Child_2_Age_Range || "",
+              p.child3 || "", r.Child_3_Gender || "", r.Child_3_Age_Range || "",
+              p.child4 || "", r.Child_4_Gender || "", r.Child_4_Age_Range || "",
+              p.child5 || "", r.Child_5_Gender || "", r.Child_5_Age_Range || "",
+              p.child6 || "", r.Child_6_Gender || "", r.Child_6_Age_Range || "",
+              p.child7 || "", r.Child_7_Gender || "", r.Child_7_Age_Range || "",
               goals[0] || "",
               goals[1] || "",
               goals[2] || "",
@@ -5978,7 +6353,7 @@ import UserManagement from './components/UserManagement';
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          showToast(`Exported ${familyDirectoryOptions.length} profiles`);
+          showToast(`Exported ${activeFamilyDirectoryOptions.length} profiles`);
         };
 
         // Export entries to CSV
@@ -5996,7 +6371,8 @@ import UserManagement from './components/UserManagement';
             "interventions", "plan",
             "interactions", "parenting_skills", "chain_of_custody",
             // DST-SP fields
-            "patch_removed", "new_patch_applied", "client_willing_continue", "test_mailed",
+            "patch_removed", "new_patch_applied", "client_willing_continue", "test_mailed", "sp_date_sent",
+            "sp_test_result", "sp_client_admitted_use", "sp_non_admission_explanation", "sp_drugs_tested_positive", "sp_other_drug_specify", "sp_tampered_explanation",
             // DST-U/DST-MS fields
             "test_result", "client_admitted_use", "non_admission_explanation", "drugs_tested_positive", "other_drug_specify", "refusal_reason",
             // Legacy fields
@@ -6042,6 +6418,13 @@ import UserManagement from './components/UserManagement';
             e.new_patch_applied || "",
             e.client_willing_continue || "",
             e.test_mailed || "",
+            e.sp_date_sent || "",
+            e.sp_test_result || "",
+            e.sp_client_admitted_use || "",
+            e.sp_non_admission_explanation || "",
+            e.sp_drugs_tested_positive || "",
+            e.sp_other_drug_specify || "",
+            e.sp_tampered_explanation || "",
             // DST-U/DST-MS fields
             e.test_result || "",
             e.client_admitted_use || "",
@@ -6068,25 +6451,663 @@ import UserManagement from './components/UserManagement';
           showToast(`Exported ${entries.length} entries`);
         };
 
+        // --- Shared PDF helper: converts an HTML string to a PDF Blob ---
+        // Uses DOMParser to properly extract <style> and <body> from full HTML documents
+        const htmlToPdfBlob = async (htmlString) => {
+          const container = document.createElement("div");
+          container.style.position = "absolute";
+          container.style.left = "-9999px";
+          container.style.top = "0";
+          container.style.width = "8in";
+
+          // Parse the full HTML doc to extract styles and body content
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(htmlString, "text/html");
+
+          // Extract all <style> tags and re-create them in the container
+          const styles = doc.querySelectorAll("style");
+          styles.forEach(s => {
+            const styleEl = document.createElement("style");
+            styleEl.textContent = s.textContent;
+            container.appendChild(styleEl);
+          });
+
+          // Extract <link> tags (e.g. Google Fonts) and add them to the main document head
+          const links = doc.querySelectorAll('link[rel="stylesheet"]');
+          const addedLinks = [];
+          links.forEach(l => {
+            const linkEl = document.createElement("link");
+            linkEl.rel = "stylesheet";
+            linkEl.href = l.href;
+            document.head.appendChild(linkEl);
+            addedLinks.push(linkEl);
+          });
+
+          // Extract body content and append it
+          const bodyContent = document.createElement("div");
+          bodyContent.innerHTML = doc.body ? doc.body.innerHTML : htmlString;
+          container.appendChild(bodyContent);
+
+          document.body.appendChild(container);
+
+          // Small delay to let fonts and styles load
+          await new Promise(r => setTimeout(r, 200));
+
+          try {
+            const blob = await html2pdf()
+              .set({
+                margin: [0.4, 0.4, 0.4, 0.4],
+                filename: "doc.pdf",
+                image: { type: "jpeg", quality: 0.95 },
+                html2canvas: { scale: 2, useCORS: true, logging: false },
+                jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+                pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+              })
+              .from(container)
+              .outputPdf("blob");
+            return blob;
+          } finally {
+            document.body.removeChild(container);
+            // Clean up any links we added to <head>
+            addedLinks.forEach(l => { try { document.head.removeChild(l); } catch (_) {} });
+          }
+        };
+
+        // --- BATCH EXPORT: Case Notes as PDF files in ZIP ---
+        // Grouped per client / per service / per month / per year
+        const [batchExportLoading, setBatchExportLoading] = useState(false);
+        const [batchExportProgress, setBatchExportProgress] = useState("");
+
+        const batchExportCaseNotes = async () => {
+          const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+          // Use already-loaded entries if available, otherwise fetch fresh
+          let allEntries = [];
+          setBatchExportLoading(true);
+          setBatchExportProgress("Fetching all case notes...");
+
+          try {
+            if (entriesRef) {
+              const snapshot = await entriesRef.get();
+              allEntries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } else {
+              // Fallback to in-memory entries
+              allEntries = [...entries];
+            }
+
+            allEntries = allEntries.filter(e => !e.is_archived && e.date);
+
+            if (!allEntries.length) {
+              showToast("No case notes to export");
+              setBatchExportLoading(false);
+              setBatchExportProgress("");
+              return;
+            }
+
+            setBatchExportProgress(`Processing ${allEntries.length} entries...`);
+
+            // Group entries by client + service + month + year
+            const grouped = {};
+            allEntries.forEach(entry => {
+              const profile = familyDirectoryOptions.find(p => entryMatchesClient(entry, p.key));
+              const clientKey = profile ? profile.key : (entry.family_name || entry.master_case || "Unknown");
+              const familyName = profile ? profile.caseName : (entry.family_name || "Unknown");
+              const mcNumber = profile ? profile.mcNumber : (entry.master_case || "");
+              const svcType = entry.service_type || "General";
+
+              const d = new Date(entry.date + "T00:00:00");
+              if (isNaN(d.getTime())) return; // Skip entries with invalid dates
+              const m = d.getMonth();
+              const y = d.getFullYear();
+
+              const groupKey = `${clientKey}|||${svcType}|||${m}|||${y}`;
+
+              if (!grouped[groupKey]) {
+                grouped[groupKey] = {
+                  profile, familyName, mcNumber, serviceType: svcType,
+                  month: m, year: y, entries: [],
+                };
+              }
+              grouped[groupKey].entries.push(entry);
+            });
+
+            const zip = new JSZip();
+            const groupKeys = Object.keys(grouped);
+
+            if (!groupKeys.length) {
+              showToast("No entries matched any grouping criteria");
+              setBatchExportLoading(false);
+              setBatchExportProgress("");
+              return;
+            }
+
+            setBatchExportProgress(`Generating ${groupKeys.length} PDF files...`);
+
+            for (let idx = 0; idx < groupKeys.length; idx++) {
+              const gk = groupKeys[idx];
+              const group = grouped[gk];
+              group.entries.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+              const fileName = buildReportFileName({
+                familyName: group.familyName,
+                mcNumber: group.mcNumber,
+                serviceTypes: group.serviceType,
+                month: monthNames[group.month],
+                year: String(group.year),
+              });
+
+              // Build the HTML for each case note entry
+              const entriesHtml = group.entries.map(e => {
+                const isCancelType = ["Cancelled by Parent","Cancelled by Worker","Cancelled for Weather","Cancelled by Team","Cancelled No Confirmation","Cancelled In Route"].includes(e.contact_type);
+                const isDST = ["DST-U","DST-MS","DST-SP","DST-HF"].includes(e.service_type);
+
+                let detailsHtml = "";
+
+                if (isCancelType) {
+                  detailsHtml += `<div class="field"><strong>Cancellation Type:</strong> ${e.contact_type || ""}</div>`;
+                  if (e.weather_explanation) detailsHtml += `<div class="field"><strong>Weather Explanation:</strong> ${e.weather_explanation}</div>`;
+                  if (e.cancellation_notification) detailsHtml += `<div class="field"><strong>Notification:</strong> ${e.cancellation_notification}</div>`;
+                  if (e.cancellation_service_prep) detailsHtml += `<div class="field"><strong>Service Prep:</strong> ${e.cancellation_service_prep}</div>`;
+                  if (e.cancellation_pre_call) detailsHtml += `<div class="field"><strong>Pre-Call:</strong> ${e.cancellation_pre_call}</div>`;
+                  if (e.cancellation_en_route) detailsHtml += `<div class="field"><strong>En Route:</strong> ${e.cancellation_en_route}</div>`;
+                } else if (isDST) {
+                  detailsHtml += `<div class="field"><strong>Chain of Custody:</strong> ${e.chain_of_custody || "N/A"}</div>`;
+                  if (e.service_type === "DST-SP") {
+                    detailsHtml += `<div class="field"><strong>Patch Removed:</strong> ${e.patch_removed || "N/A"}</div>`;
+                    detailsHtml += `<div class="field"><strong>New Patch Applied:</strong> ${e.new_patch_applied || "N/A"}</div>`;
+                    detailsHtml += `<div class="field"><strong>Client Willing to Continue:</strong> ${e.client_willing_continue || "N/A"}</div>`;
+                    detailsHtml += `<div class="field"><strong>Test Mailed:</strong> ${e.test_mailed || "N/A"}</div>`;
+                    if (e.sp_date_sent) detailsHtml += `<div class="field"><strong>Date Sent:</strong> ${e.sp_date_sent}</div>`;
+                    detailsHtml += `<div class="field"><strong>Test Result:</strong> ${e.sp_test_result || "Pending"}</div>`;
+                    if (e.sp_test_result === "Positive") {
+                      detailsHtml += `<div class="field"><strong>Client Admitted:</strong> ${e.sp_client_admitted_use || "N/A"}</div>`;
+                      if (e.sp_non_admission_explanation) detailsHtml += `<div class="field"><strong>Explanation:</strong> ${e.sp_non_admission_explanation}</div>`;
+                      if (e.sp_drugs_tested_positive) detailsHtml += `<div class="field"><strong>Drugs Positive:</strong> ${e.sp_drugs_tested_positive}</div>`;
+                      if (e.sp_other_drug_specify) detailsHtml += `<div class="field"><strong>Other Drug:</strong> ${e.sp_other_drug_specify}</div>`;
+                    }
+                    if (e.sp_test_result === "Tampered" && e.sp_tampered_explanation) {
+                      detailsHtml += `<div class="field"><strong>Tampered:</strong> ${e.sp_tampered_explanation}</div>`;
+                    }
+                  } else {
+                    detailsHtml += `<div class="field"><strong>Test Result:</strong> ${e.test_result || "N/A"}</div>`;
+                    if (e.test_result === "Positive") {
+                      detailsHtml += `<div class="field"><strong>Client Admitted:</strong> ${e.client_admitted_use || "N/A"}</div>`;
+                      if (e.non_admission_explanation) detailsHtml += `<div class="field"><strong>Explanation:</strong> ${e.non_admission_explanation}</div>`;
+                      if (e.drugs_tested_positive) detailsHtml += `<div class="field"><strong>Drugs Positive:</strong> ${e.drugs_tested_positive}</div>`;
+                      if (e.other_drug_specify) detailsHtml += `<div class="field"><strong>Other Drug:</strong> ${e.other_drug_specify}</div>`;
+                    }
+                    if (e.test_result === "Refusal" && e.refusal_reason) {
+                      detailsHtml += `<div class="field"><strong>Refusal Reason:</strong> ${e.refusal_reason}</div>`;
+                    }
+                  }
+                  if (e.sent_to_lab === "Yes") detailsHtml += `<div class="field"><strong>Sent to Lab:</strong> Yes</div>`;
+                  if (e.lab_result_text) detailsHtml += `<div class="field"><strong>Lab Results:</strong> ${e.lab_result_text}</div>`;
+                  if (e.visit_narrative) detailsHtml += `<div class="narrative"><strong>Narrative:</strong><br>${e.visit_narrative}</div>`;
+                } else {
+                  if (e.participants) detailsHtml += `<div class="field"><strong>Participants:</strong> ${e.participants}</div>`;
+                  if (e.visit_narrative) detailsHtml += `<div class="narrative"><strong>Narrative:</strong><br>${e.visit_narrative}</div>`;
+                  if (e.goals_progress) detailsHtml += `<div class="narrative"><strong>Goals Progress:</strong><br>${e.goals_progress}</div>`;
+                  if (e.safety_concern_present === "Yes") {
+                    detailsHtml += `<div class="field safety"><strong>Safety Concern:</strong> ${e.safety_concern_description || "Yes"}</div>`;
+                    if (e.safety_concern_addressed) detailsHtml += `<div class="field"><strong>Addressed:</strong> ${e.safety_concern_addressed}</div>`;
+                    if (e.safety_notification) detailsHtml += `<div class="field"><strong>Notified:</strong> ${e.safety_notification}</div>`;
+                    if (e.safety_hotline_intake) detailsHtml += `<div class="field"><strong>Hotline Intake #:</strong> ${e.safety_hotline_intake}</div>`;
+                  } else {
+                    detailsHtml += `<div class="field"><strong>Safety:</strong> No concerns identified</div>`;
+                  }
+                  if (e.interventions) detailsHtml += `<div class="narrative"><strong>Interventions:</strong><br>${e.interventions}</div>`;
+                  if (e.plan) detailsHtml += `<div class="narrative"><strong>Plan:</strong><br>${e.plan}</div>`;
+                  if (e.interactions) detailsHtml += `<div class="narrative"><strong>Interactions:</strong><br>${e.interactions}</div>`;
+                  if (e.parenting_skills) detailsHtml += `<div class="narrative"><strong>Parenting Skills:</strong><br>${e.parenting_skills}</div>`;
+                }
+
+                return `
+                  <div class="entry">
+                    <div class="entry-header">
+                      <span><strong>Date:</strong> ${e.date || "N/A"}</span>
+                      <span><strong>Start Time:</strong> ${formatTime12h(e.start_time) || "N/A"}</span>
+                      <span><strong>End Time:</strong> ${formatTime12h(e.end_time) || "N/A"}</span>
+                      <span><strong>Contact:</strong> ${e.contact_type || "N/A"}</span>
+                      <span><strong>Location:</strong> ${e.location || "N/A"}</span>
+                    </div>
+                    <div class="entry-worker">Worker: ${e.worker_name || "N/A"}${e.worker_credential ? ` (${e.worker_credential})` : ""}</div>
+                    <div class="entry-body">${detailsHtml}</div>
+                  </div>`;
+              }).join("\n");
+
+              const html = `<!DOCTYPE html>
+<html><head>
+<title>${fileName}</title>
+<style>
+  @page { size: letter; margin: 0.5in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #000; padding: 0.25in; }
+  .doc-header { text-align: center; border-bottom: 3px solid #1E3A5F; padding-bottom: 12px; margin-bottom: 16px; }
+  .doc-header h1 { font-size: 14pt; color: #1E3A5F; margin-bottom: 4px; }
+  .doc-header .meta { font-size: 9pt; color: #666; }
+  .info-grid { display: flex; gap: 20px; margin-bottom: 16px; padding: 10px; background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 4px; flex-wrap: wrap; }
+  .info-grid div { font-size: 9pt; }
+  .info-grid strong { color: #1E3A5F; }
+  .entry { border: 1px solid #ddd; margin-bottom: 12px; page-break-inside: avoid; border-radius: 4px; }
+  .entry-header { background: #f5f5f5; padding: 6px 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 9pt; }
+  .entry-worker { padding: 4px 10px; font-size: 8pt; color: #666; border-bottom: 1px solid #eee; }
+  .entry-body { padding: 10px; }
+  .field { font-size: 9pt; margin-bottom: 4px; }
+  .narrative { font-size: 9pt; margin-bottom: 8px; white-space: pre-wrap; line-height: 1.5; }
+  .safety { color: #b91c1c; }
+  .footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 8pt; color: #666; text-align: center; }
+  @media print { body { padding: 0; } }
+</style>
+</head><body>
+  <div class="doc-header">
+    <h1>CASE NOTES — ${(group.serviceType || "").toUpperCase()}</h1>
+    <div class="meta">Epworth Village Family Resources | ${monthNames[group.month]} ${group.year}</div>
+  </div>
+  <div class="info-grid">
+    <div><strong>Family:</strong> ${group.familyName}</div>
+    <div><strong>MC#:</strong> ${group.mcNumber || "N/A"}</div>
+    <div><strong>Service:</strong> ${group.serviceType}</div>
+    <div><strong>Month:</strong> ${monthNames[group.month]} ${group.year}</div>
+    <div><strong>Total Notes:</strong> ${group.entries.length}</div>
+  </div>
+  ${entriesHtml}
+  <div class="footer">Epworth Village Family Resources | Confidential Document | ${monthNames[group.month]} ${group.year}</div>
+</body></html>`;
+
+              // Convert HTML to PDF and add to ZIP
+              const folderName = (group.familyName || "Unknown").replace(/[/\\:*?"<>|]/g, "");
+              setBatchExportProgress(`Generating PDF ${idx + 1} of ${groupKeys.length}...`);
+              try {
+                const pdfBlob = await htmlToPdfBlob(html);
+                zip.file(`${folderName}/${fileName}.pdf`, pdfBlob);
+              } catch (pdfErr) {
+                console.warn(`PDF generation failed for ${fileName}, skipping:`, pdfErr);
+              }
+            }
+
+            setBatchExportProgress("Creating ZIP...");
+            const blob = await zip.generateAsync({ type: "blob" });
+            saveAs(blob, `Epworth_CaseNotes_BatchExport_${new Date().toISOString().slice(0, 10)}.zip`);
+            showToast(`Exported ${groupKeys.length} PDF files across ${new Set(groupKeys.map(k => k.split("|||")[0])).size} clients`);
+          } catch (err) {
+            console.error("Batch export error:", err);
+            showToast("Batch export failed: " + (err.message || String(err)));
+          } finally {
+            setBatchExportLoading(false);
+            setBatchExportProgress("");
+          }
+        };
+
+        // --- BATCH EXPORT: Monthly Reports as PDF files in ZIP ---
+        const [batchReportLoading, setBatchReportLoading] = useState(false);
+        const [batchReportProgress, setBatchReportProgress] = useState("");
+
+        const batchExportMonthlyReports = async () => {
+          if (!entriesRef) return;
+          setBatchReportLoading(true);
+          setBatchReportProgress("Fetching all case notes...");
+
+          try {
+            const snapshot = await entriesRef.orderBy("createdAt", "desc").get();
+            const allEntries = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => !e.is_archived);
+
+            if (!allEntries.length) {
+              showToast("No entries to generate reports from");
+              setBatchReportLoading(false);
+              setBatchReportProgress("");
+              return;
+            }
+
+            const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+            const providerPrefix = "The Family Life Specialist from Epworth Family Resources";
+
+            // Map of reportType keys to service type arrays
+            const reportTypeServiceMap = {
+              family_support: ["OHFS/IHFS", "OHFS", "IHFS"],
+              ptsv: ["PTSV", "PTSV-C"],
+              drug_testing: ["DST-SP", "DST-U", "DST-MS", "DST-HF"],
+            };
+
+            // Group entries by client + service category + month/year
+            const grouped = {};
+            const activeProfiles = familyDirectoryOptions.filter(p => !p.isArchived);
+
+            activeProfiles.forEach(profile => {
+              // Find all entries for this profile
+              const profileEntries = allEntries.filter(e => entryMatchesClient(e, profile.key));
+
+              profileEntries.forEach(entry => {
+                if (!entry.date) return;
+                const d = new Date(entry.date + "T00:00:00");
+                const m = d.getMonth();
+                const y = d.getFullYear();
+                const svcType = String(entry.service_type || "").toUpperCase();
+
+                // Determine report type category
+                let reportCategory = null;
+                for (const [cat, svcTypes] of Object.entries(reportTypeServiceMap)) {
+                  if (svcTypes.includes(svcType)) {
+                    reportCategory = cat;
+                    break;
+                  }
+                }
+                if (!reportCategory) return;
+
+                const groupKey = `${profile.key}|||${reportCategory}|||${m}|||${y}`;
+                if (!grouped[groupKey]) {
+                  grouped[groupKey] = {
+                    profile, reportCategory, month: m, year: y,
+                    entries: [],
+                  };
+                }
+                grouped[groupKey].entries.push(entry);
+              });
+            });
+
+            const zip = new JSZip();
+            const groupKeys = Object.keys(grouped);
+            setBatchReportProgress(`Generating ${groupKeys.length} monthly report PDFs...`);
+
+            for (let idx = 0; idx < groupKeys.length; idx++) {
+              const gk = groupKeys[idx];
+              const group = grouped[gk];
+              const { profile, reportCategory, month: m, year: y } = group;
+              const filteredEntries = group.entries.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+              // Calculate session log & stats
+              const sessionLog = filteredEntries.map(e => {
+                const startTime = e.start_time || "";
+                const endTime = e.end_time || "";
+                let duration = 0;
+                if (startTime && endTime) {
+                  const [sh, sm] = startTime.split(":").map(Number);
+                  const [eh, em] = endTime.split(":").map(Number);
+                  if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+                    duration = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm)) / 60);
+                  }
+                }
+                const contactType = String(e?.contact_type || "").trim();
+                const isCancelled = ["Cancelled by Parent","Cancelled by Worker","Cancelled for Weather","Cancelled by Team","Cancelled No Confirmation","Cancelled In Route"].includes(contactType);
+                const isNoShow = contactType === "No Show" || contactType === "No-Show";
+                const status = isCancelled ? "Cancelled" : isNoShow ? "No-Show" : "Completed";
+
+                return {
+                  date: e.date || "", type: e.service_type || "", location: e.location || "",
+                  time: startTime && endTime ? `${startTime}-${endTime}` : "",
+                  duration: duration.toFixed(1), status, description: e.visit_narrative || e.session_narrative || "",
+                  notes: e.plan || "",
+                  testType: e.service_type?.replace("DST-", "") || "",
+                  testStatus: e.test_result === "Positive" ? "P" : e.test_result === "Refusal" ? "R" : contactType === "No Show" ? "NS" : e.client_admitted_use === "Yes" ? "A" : "C",
+                  testResult: e.test_result || (e.client_admitted_use === "Yes" ? "Admission" : ""),
+                };
+              });
+
+              const completedSessions = sessionLog.filter(s => s.status === "Completed");
+              const totalHours = completedSessions.reduce((sum, s) => sum + parseFloat(s.duration || 0), 0);
+              const noShows = sessionLog.filter(s => s.status === "No-Show").length;
+              const cancellations = sessionLog.filter(s => s.status === "Cancelled").length;
+              const workerName = filteredEntries[0]?.worker_name || "";
+
+              // Goals from profile
+              const goals = (profile.goals || []).map(g => typeof g === "string" ? g : String(g?.text || "")).filter(Boolean);
+
+              // Safety assessment
+              const safetyConcerns = filteredEntries.filter(e => e.safety_concern_present === "Yes");
+              const safetyText = safetyConcerns.length === 0
+                ? `${providerPrefix} assessed child safety during each contact. No safety concerns were identified during the reporting period.`
+                : `${providerPrefix} documented safety concerns during this period. ${safetyConcerns.map(e => `${e.safety_concern_description || "Safety concern noted"}. Addressed: ${e.safety_concern_addressed || "See notes"}.`).join(" ")}`;
+
+              // Narratives for summary
+              const allNarratives = filteredEntries.filter(e => e.visit_narrative || e.session_narrative).map(e => e.visit_narrative || e.session_narrative);
+              const narrativeSummary = allNarratives.slice(0, 3).join(" ") || "";
+
+              // Family members
+              const familyMembers = [];
+              if (profile.raw?.Parent_1) familyMembers.push(profile.raw.Parent_1);
+              if (profile.raw?.Parent_2) familyMembers.push(profile.raw.Parent_2);
+              for (let i = 1; i <= 7; i++) { if (profile.raw?.[`Child_${i}`]) familyMembers.push(profile.raw[`Child_${i}`]); }
+
+              // Service label
+              const serviceLabel = reportCategory === "family_support" ? "Family Support"
+                : reportCategory === "ptsv" ? "PTSV" : "Drug Testing";
+              const reportTitle = reportCategory === "family_support"
+                ? "FAMILY SUPPORT SERVICE – MONTHLY SUMMARY REPORT"
+                : reportCategory === "ptsv"
+                ? "PARENTING TIME / SUPERVISED VISITATION – MONTHLY SUMMARY REPORT"
+                : "DRUG TESTING SPECIMEN COLLECTION – MONTHLY CONTACT LOG / SUMMARY REPORT";
+
+              // Build filename
+              const fileName = buildReportFileName({
+                familyName: profile.caseName,
+                mcNumber: profile.mcNumber,
+                serviceTypes: serviceLabel,
+                month: monthNames[m],
+                year: String(y),
+              });
+
+              // Session log table rows
+              const sessionTableRows = reportCategory === "drug_testing"
+                ? sessionLog.map(s => `<tr><td>${s.date}</td><td>${s.time}</td><td>${s.testType || s.type}</td><td>${s.testStatus}</td><td>${s.testResult || ""}</td></tr>`).join("")
+                : sessionLog.map(s => `<tr><td>${s.date}</td><td>${s.location}</td><td>${s.duration} hrs</td><td>${s.status}</td></tr>`).join("");
+
+              const sessionTableHeaders = reportCategory === "drug_testing"
+                ? "<tr><th>Date</th><th>Time</th><th>Type</th><th>Status</th><th>Result</th></tr>"
+                : "<tr><th>Date</th><th>Location</th><th>Duration</th><th>Status</th></tr>";
+
+              // Narratives section
+              const narrativesHtml = sessionLog.filter(s => s.description && s.status === "Completed").map(s => `
+                <div style="border: 1px solid #ddd; margin-bottom: 12px; page-break-inside: avoid; border-radius: 4px;">
+                  <div style="background: #f5f5f5; padding: 6px 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 9pt;">
+                    <span><strong>Date:</strong> ${s.date}</span>
+                    <span><strong>${reportCategory === "drug_testing" ? "Type" : "Location"}:</strong> ${reportCategory === "drug_testing" ? (s.testType || s.type) : s.location}</span>
+                    <span><strong>Duration:</strong> ${s.duration} hrs</span>
+                  </div>
+                  <div style="padding: 10px; font-size: 9pt; line-height: 1.5; white-space: pre-wrap;">${s.description}</div>
+                </div>`).join("");
+
+              // Drug testing specific summary
+              let drugSummaryHtml = "";
+              if (reportCategory === "drug_testing") {
+                const collected = filteredEntries.filter(e => e.chain_of_custody === "Yes").length;
+                const refusals = filteredEntries.filter(e => e.test_result === "Refusal").length;
+                const admissions = filteredEntries.filter(e => e.client_admitted_use === "Yes").length;
+                drugSummaryHtml = `
+                  <div class="section">
+                    <div class="section-title">Collection Summary</div>
+                    <table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>
+                      <tr><td>Successful Collections</td><td>${collected}</td></tr>
+                      <tr><td>No-Shows</td><td>${noShows}</td></tr>
+                      <tr><td>Refusals</td><td>${refusals}</td></tr>
+                      <tr><td>Admissions</td><td>${admissions}</td></tr>
+                      <tr><td>Cancellations</td><td>${cancellations}</td></tr>
+                    </tbody></table>
+                  </div>`;
+              }
+
+              // Goals section
+              const goalsHtml = goals.length > 0 ? `
+                <div class="section">
+                  <div class="section-title">Goals</div>
+                  <ol style="margin: 6px 0 6px 18px; padding: 0; font-size: 9pt;">${goals.map(g => `<li>${g}</li>`).join("")}</ol>
+                </div>` : "";
+
+              const html = `<!DOCTYPE html>
+<html><head>
+<title>${fileName}</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+<style>
+  @page { size: letter; margin: 0.5in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #000; padding: 0.25in; }
+  .header { text-align: center; border-bottom: 3px solid #1E3A5F; padding-bottom: 12px; margin-bottom: 16px; }
+  .header h1 { font-size: 14pt; font-weight: bold; color: #1E3A5F; margin-bottom: 4px; }
+  .header .subtitle { font-size: 9pt; color: #666; }
+  .section { margin-bottom: 12px; page-break-inside: avoid; }
+  .section-title { background: #1E3A5F; color: white; padding: 4px 8px; font-weight: bold; font-size: 9pt; text-transform: uppercase; margin-bottom: 6px; }
+  .field-row { display: flex; border-bottom: 1px solid #ddd; padding: 4px 0; }
+  .field-label { font-weight: bold; width: 180px; flex-shrink: 0; font-size: 9pt; }
+  .field-value { flex: 1; font-size: 9pt; }
+  .two-col { display: flex; gap: 20px; }
+  .two-col > div { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-top: 4px; }
+  th { background: #f0f0f0; border: 1px solid #999; padding: 4px; text-align: left; font-weight: bold; }
+  td { border: 1px solid #999; padding: 4px; vertical-align: top; }
+  .narrative { border: 1px solid #ddd; padding: 8px; min-height: 40px; background: #fafafa; font-size: 9pt; white-space: pre-wrap; }
+  .checkbox-row { display: flex; gap: 20px; padding: 6px 0; }
+  .checkbox-item { display: flex; align-items: center; gap: 4px; }
+  .checkbox { width: 12px; height: 12px; border: 1px solid #000; display: inline-block; }
+  .checkbox.checked::after { content: "\\2713"; font-size: 10px; font-weight: bold; }
+  .signature-section { margin-top: 20px; display: flex; gap: 40px; }
+  .signature-line { flex: 1; border-top: 1px solid #000; padding-top: 4px; font-size: 9pt; }
+  .signature-name { font-family: 'Dancing Script', cursive; font-size: 18pt; font-weight: 600; color: #1a365d; }
+  .footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 8pt; color: #666; text-align: center; }
+  @media print { body { padding: 0; } }
+</style>
+</head><body>
+  <div class="header">
+    <h1>${reportTitle}</h1>
+    <div class="subtitle">Due: 10th calendar day of the month following service</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Provider & Report Information</div>
+    <div class="two-col">
+      <div>
+        <div class="field-row"><span class="field-label">Provider Agency:</span><span class="field-value">Epworth Village</span></div>
+        <div class="field-row"><span class="field-label">Report Month/Year:</span><span class="field-value">${monthNames[m]} ${y}</span></div>
+      </div>
+      <div>
+        <div class="field-row"><span class="field-label">Worker:</span><span class="field-value">${workerName}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Client Information</div>
+    <div class="two-col">
+      <div>
+        <div class="field-row"><span class="field-label">Family Name:</span><span class="field-value">${profile.caseName || ""}</span></div>
+        <div class="field-row"><span class="field-label">Family Members:</span><span class="field-value">${familyMembers.join(", ")}</span></div>
+        <div class="field-row"><span class="field-label">Reporting Period:</span><span class="field-value">${filteredEntries[0]?.date || ""} to ${filteredEntries[filteredEntries.length - 1]?.date || ""}</span></div>
+      </div>
+      <div>
+        <div class="field-row"><span class="field-label">MC#:</span><span class="field-value">${profile.mcNumber || ""}</span></div>
+        <div class="field-row"><span class="field-label">CFSS:</span><span class="field-value">${profile.cfss || ""}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Service Hours</div>
+    <div class="two-col">
+      <div class="field-row"><span class="field-label">Hours Completed:</span><span class="field-value">${totalHours.toFixed(1)}</span></div>
+      <div class="field-row"><span class="field-label">Sessions Completed:</span><span class="field-value">${completedSessions.length}</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">${reportCategory === "drug_testing" ? "Specimen Collection Log" : "Session Log"}</div>
+    <table><thead>${sessionTableHeaders}</thead><tbody>
+      ${sessionTableRows || '<tr><td colspan="4" style="text-align:center;color:#999;">No entries</td></tr>'}
+    </tbody></table>
+  </div>
+
+  ${drugSummaryHtml}
+
+  <div class="section" style="page-break-before: always;">
+    <div class="section-title">${reportCategory === "drug_testing" ? "Contact Narratives" : "Case Note Narratives"}</div>
+    ${narrativesHtml || '<div style="padding: 8px; color: #999; text-align: center;">No narratives available</div>'}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Session Exceptions</div>
+    <div class="two-col">
+      <div><div class="field-row"><span class="field-label">No-Shows:</span><span class="field-value">${noShows}</span></div></div>
+      <div><div class="field-row"><span class="field-label">Cancellations:</span><span class="field-value">${cancellations}</span></div></div>
+    </div>
+  </div>
+
+  ${goalsHtml}
+
+  <div class="section">
+    <div class="section-title">Child Safety Assessment</div>
+    <div class="narrative">${safetyText}</div>
+    <div class="checkbox-row" style="margin-top: 8px;">
+      <span class="field-label">Safety Concerns:</span>
+      <span class="checkbox-item"><span class="checkbox ${safetyConcerns.length === 0 ? "checked" : ""}"></span> None</span>
+      <span class="checkbox-item"><span class="checkbox ${safetyConcerns.length > 0 ? "checked" : ""}"></span> Documented</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Summary</div>
+    <div class="narrative">${narrativeSummary || `${providerPrefix} supported the family through scheduled contacts and reinforced progress toward case plan goals.`}</div>
+  </div>
+
+  <div class="signature-section">
+    <div class="signature-line"><span class="signature-name">${workerName}</span><br><span style="font-size: 8pt; color: #666;">Worker Signature</span></div>
+    <div class="signature-line">${new Date().toLocaleDateString()}<br><span style="font-size: 8pt; color: #666;">Date</span></div>
+  </div>
+  <div class="signature-section" style="margin-top: 16px;">
+    <div class="signature-line"><span class="signature-name">Brandon Hinrichs</span><br><span style="font-size: 8pt; color: #666;">IHS Director</span></div>
+    <div class="signature-line">${new Date().toLocaleDateString()}<br><span style="font-size: 8pt; color: #666;">Date</span></div>
+  </div>
+
+  <div class="footer">Epworth Village Family Resources | Confidential Document | ${monthNames[m]} ${y}</div>
+</body></html>`;
+
+              // Convert HTML to PDF and organize into folders by client name
+              const folderName = `${(profile.caseName || "Unknown").replace(/[/\\:*?"<>|]/g, "")}`;
+              setBatchReportProgress(`Generating PDF ${idx + 1} of ${groupKeys.length}...`);
+              try {
+                const pdfBlob = await htmlToPdfBlob(html);
+                zip.file(`${folderName}/${fileName}.pdf`, pdfBlob);
+              } catch (pdfErr) {
+                console.warn(`PDF generation failed for ${fileName}, skipping:`, pdfErr);
+              }
+            }
+
+            if (groupKeys.length === 0) {
+              showToast("No entries matched any active clients with recognized service types");
+              setBatchReportLoading(false);
+              setBatchReportProgress("");
+              return;
+            }
+
+            setBatchReportProgress("Creating ZIP...");
+            const blob = await zip.generateAsync({ type: "blob" });
+            saveAs(blob, `Epworth_MonthlyReports_BatchExport_${new Date().toISOString().slice(0, 10)}.zip`);
+            showToast(`Exported ${groupKeys.length} monthly report PDFs`);
+          } catch (err) {
+            console.error("Batch report export error:", err);
+            showToast("Batch export failed: " + (err.message || err));
+          } finally {
+            setBatchReportLoading(false);
+            setBatchReportProgress("");
+          }
+        };
+
 			        const generateNoteText = (entry) => {
 			          let note = `SERVICE NOTE: ${entry.service_type || "General"}\n`;
 			          if (entry.worker_name || entry.worker_credential) {
 			            note += `Worker: ${entry.worker_name || "N/A"}${entry.worker_credential ? ` (${entry.worker_credential})` : ""}\n`;
 			          }
-			          note += `Date: ${entry.date || "N/A"} | Time: ${entry.start_time || ""} - ${entry.end_time || ""}\n`;
+			          note += `Date: ${entry.date || "N/A"} | Time: ${formatTime12h(entry.start_time) || ""} - ${formatTime12h(entry.end_time) || ""}\n`;
 			          note += `Contact: ${entry.contact_type || "N/A"} | Location: ${entry.location || "N/A"}\n`;
 			          note += `Family: ${entry.family_name || "N/A"} (Case: ${entry.master_case || "N/A"})\n`;
 			          note += `----------------------------------------\n`;
 		
 		          const specificFields = SERVICE_CONFIGS[entry.service_type] || SERVICE_CONFIGS.default;
 
-		          if (entry.contact_type !== "Cancelled In Route" && entry.goals_progress) {
+		          const isCancelType = ["Cancelled by Parent", "Cancelled by Worker", "Cancelled for Weather", "Cancelled by Team", "Cancelled No Confirmation", "Cancelled In Route"].includes(entry.contact_type);
+		          if (!isCancelType && entry.goals_progress) {
 		            const cleaned = stripGoalsMarker(entry.goals_progress);
 		            if (cleaned) note += `GOALS:\n${cleaned}\n\n`;
 		          }
-		
-		          if (entry.contact_type === "Cancelled In Route") {
+
+		          if (isCancelType) {
 		            note += `CANCELLATION / NO-SHOW DOCUMENTATION:\n`;
+		            if (entry.weather_explanation) note += `WEATHER EXPLANATION:\n${entry.weather_explanation}\n\n`;
 		            if (entry.cancellation_notification) note += `NOTIFICATION:\n${entry.cancellation_notification}\n\n`;
 		            if (entry.cancellation_service_prep) note += `SERVICE PREP:\n${entry.cancellation_service_prep}\n\n`;
 		            if (entry.cancellation_pre_call) note += `PRE-CALL:\n${entry.cancellation_pre_call}\n\n`;
@@ -6102,7 +7123,31 @@ import UserManagement from './components/UserManagement';
 		              note += `Patch Removed: ${entry.patch_removed || "N/A"}\n`;
 		              note += `New Patch Applied: ${entry.new_patch_applied || "N/A"}\n`;
 		              note += `Client Willing to Continue: ${entry.client_willing_continue || "N/A"}\n`;
-		              note += `Test Mailed for Confirmation: ${entry.test_mailed || "N/A"}\n\n`;
+		              note += `Test Mailed for Confirmation: ${entry.test_mailed || "N/A"}\n`;
+		              if (entry.sp_date_sent) note += `Date Test Sent: ${entry.sp_date_sent}\n`;
+		              note += `\n`;
+		              // Sweat Patch Results
+		              note += `SWEAT PATCH RESULT: ${entry.sp_test_result || "Pending"}\n`;
+		              if (entry.sp_test_result === "Positive") {
+		                note += `POSITIVE RESULT DOCUMENTATION:\n`;
+		                note += `Client Admitted to Using: ${entry.sp_client_admitted_use || "N/A"}\n`;
+		                if (entry.sp_client_admitted_use === "No" && entry.sp_non_admission_explanation) {
+		                  note += `Non-Admission Explanation: ${entry.sp_non_admission_explanation}\n`;
+		                }
+		                if (entry.sp_drugs_tested_positive) {
+		                  note += `Drugs Tested Positive For: ${entry.sp_drugs_tested_positive}\n`;
+		                }
+		                if (entry.sp_other_drug_specify) {
+		                  note += `Other Drug(s): ${entry.sp_other_drug_specify}\n`;
+		                }
+		              }
+		              if (entry.sp_test_result === "Tampered") {
+		                note += `TAMPERED DOCUMENTATION (Counts as Positive):\n`;
+		                if (entry.sp_tampered_explanation) {
+		                  note += `Tampered Circumstances: ${entry.sp_tampered_explanation}\n`;
+		                }
+		              }
+		              note += `\n`;
 		            } else if (isUAorMS(entry.service_type)) {
 		              // UA or Mouth Swab specific fields
 		              note += `TEST RESULT: ${entry.test_result || "N/A"}\n\n`;
@@ -6127,6 +7172,16 @@ import UserManagement from './components/UserManagement';
 		                }
 		                note += `\n`;
 		              }
+		            }
+
+		            // Lab submission info (all drug testing types)
+		            if (entry.lab_result_text) {
+		              note += `LAB RESULTS:\n${entry.lab_result_text}\n\n`;
+		            } else if (entry.sent_to_lab === "Yes") {
+		              note += `LAB SUBMISSION: Specimen sent to lab — results pending.\n\n`;
+		            }
+		            if (entry.sent_to_lab === "No" && entry.not_sent_to_lab_reason) {
+		              note += `NOT SENT TO LAB - REASON:\n${entry.not_sent_to_lab_reason}\n\n`;
 		            }
 		          } else {
 		            // Standard field rendering for non-drug testing services
@@ -6248,7 +7303,7 @@ import UserManagement from './components/UserManagement';
               if (localEditingId) {
                 await nonBillableContactsRef.doc(localEditingId).update(contactData);
                 showToast("Contact updated!");
-                logAuditEvent("updated", "contact", {
+                await logAuditEvent("updated", "contact", {
                   contact_id: localEditingId,
                   family_name: localFormData.family_name,
                   contacted_parties: localFormData.contacted_parties,
@@ -6257,7 +7312,7 @@ import UserManagement from './components/UserManagement';
                 contactData.created_at = firebase.firestore.FieldValue.serverTimestamp();
                 const docRef = await nonBillableContactsRef.add(contactData);
                 showToast("Contact saved!");
-                logAuditEvent("created", "contact", {
+                await logAuditEvent("created", "contact", {
                   contact_id: docRef.id,
                   family_name: localFormData.family_name,
                   contacted_parties: localFormData.contacted_parties,
@@ -6293,7 +7348,7 @@ import UserManagement from './components/UserManagement';
               const contactToDelete = nonBillableContacts.find(c => c.id === contactId);
               await nonBillableContactsRef.doc(contactId).delete();
               showToast("Contact deleted!");
-              logAuditEvent("deleted", "contact", {
+              await logAuditEvent("deleted", "contact", {
                 contact_id: contactId,
                 family_name: contactToDelete?.family_name || "unknown",
               });
@@ -6556,10 +7611,19 @@ import UserManagement from './components/UserManagement';
 	          const activeFields = currentService ? SERVICE_CONFIGS[currentService] || SERVICE_CONFIGS.default : [];
 	
 			          const match = findCaseMatch(formData);
-			          const selectedDirectoryKey = normalize(formData.family_directory_key);
+			          const selectedDirectoryKey = (() => {
+		            const fdk = normalize(formData.family_directory_key);
+		            if (!fdk) return "";
+		            if (familyDirectoryOptions.find(o => o.key === fdk)) return fdk;
+		            const compat = familyDirectoryOptions.find(o => o.familyId === fdk || o.mcNumber === fdk);
+		            return compat ? compat.key : fdk;
+		          })();
 			          const isCancelledByParent = formData.contact_type === "Cancelled by Parent";
 			          const isCancelledByWorker = formData.contact_type === "Cancelled by Worker";
-			          const isCancelledInRoute = isCancelledByParent || isCancelledByWorker; // For backwards compatibility
+			          const isCancelledForWeather = formData.contact_type === "Cancelled for Weather";
+			          const isCancelledByTeam = formData.contact_type === "Cancelled by Team";
+			          const isCancelledNoConfirmation = formData.contact_type === "Cancelled No Confirmation";
+			          const isCancelledInRoute = isCancelledByParent || isCancelledByWorker || isCancelledForWeather || isCancelledByTeam || isCancelledNoConfirmation; // For backwards compatibility
 			          const isMonitoredVisit = formData.contact_type === "Monitored Visit";
 			          const isRemoteContact = ["Phone Call", "Text Message"].includes(formData.contact_type || "");
 		          // Only show locations saved for the selected family's profile (not global locations)
@@ -7076,7 +8140,7 @@ import UserManagement from './components/UserManagement';
 		                      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
 			                        <div className="flex items-center justify-between mb-3">
 			                          <div className="font-bold text-gray-800">Goals</div>
-			                          <div className="text-xs text-gray-500">Select goal(s), add rating, how addressed, and next steps.</div>
+			                          <div className="text-xs text-gray-500">Check goals addressed, describe how, and plan next steps.</div>
 			                        </div>
 
 		                        <div className="space-y-3">
@@ -7095,19 +8159,15 @@ import UserManagement from './components/UserManagement';
 			                                        const next = { ...prev };
 			                                        const selected = { ...(next.goals_selected || {}) };
 			                                        const addressed = { ...(next.goals_addressed || {}) };
-			                                        const ratings = { ...(next.goals_ratings || {}) };
 			                                        const nextSteps = { ...(next.goals_next_steps || {}) };
 			                                        if (isChecked) selected[g.key] = true;
 			                                        else delete selected[g.key];
-			                                        if (isChecked && !ratings[g.key]) ratings[g.key] = "NA";
 			                                        if (!isChecked) {
 			                                          delete addressed[g.key];
-			                                          delete ratings[g.key];
 			                                          delete nextSteps[g.key];
 			                                        }
 			                                        next.goals_selected = selected;
 			                                        next.goals_addressed = addressed;
-			                                        next.goals_ratings = ratings;
 			                                        next.goals_next_steps = nextSteps;
 			                                        return next;
 			                                      });
@@ -7117,23 +8177,9 @@ import UserManagement from './components/UserManagement';
 			                                    <div className="text-sm font-semibold text-gray-900">{g.text}</div>
 			                                    {checked && (
 			                                      <div className="mt-3 space-y-3">
-				                                        <InputField
-				                                          label="Progress Rating"
-				                                          type="select"
-				                                          options={GOAL_RATINGS}
-				                                          value={formData.goals_ratings?.[g.key] || "NA"}
-			                                          onChange={(e) => {
-			                                            const value = e.target.value;
-			                                            setFormData((prev) => ({
-			                                              ...prev,
-			                                              goals_ratings: { ...(prev.goals_ratings || {}), [g.key]: value },
-			                                            }));
-			                                          }}
-				                                        />
-
 						                                        <div>
 						                                          <div className="flex items-center justify-between gap-3 mb-1">
-						                                            <div className="text-xs font-bold text-gray-600">How was this addressed?</div>
+						                                            <div className="text-xs font-bold text-gray-600">How was this goal addressed?</div>
 						                                            <DictationButton
 						                                              title="Dictate how this goal was addressed"
 						                                              className="py-1 px-2 text-xs"
@@ -7157,15 +8203,15 @@ import UserManagement from './components/UserManagement';
 			                                                goals_addressed: { ...(prev.goals_addressed || {}), [g.key]: value },
 			                                              }));
 			                                            }}
-					                                            placeholder="What did you do/observe related to this goal?"
+					                                            placeholder="Describe what you did or observed related to this goal..."
 					                                          />
 					                                        </div>
 
 						                                        <div>
 						                                          <div className="flex items-center justify-between gap-3 mb-1">
-						                                            <div className="text-xs font-bold text-gray-600">Next steps to continue</div>
+						                                            <div className="text-xs font-bold text-gray-600">Plan to continue</div>
 						                                            <DictationButton
-						                                              title="Dictate next steps"
+						                                              title="Dictate plan to continue"
 						                                              className="py-1 px-2 text-xs"
 						                                              onText={(t) => {
 						                                                const current = formData.goals_next_steps?.[g.key] || "";
@@ -7187,7 +8233,7 @@ import UserManagement from './components/UserManagement';
 			                                                goals_next_steps: { ...(prev.goals_next_steps || {}), [g.key]: value },
 			                                              }));
 			                                            }}
-					                                            placeholder="What will you/they do next?"
+					                                            placeholder="What will you do next to continue working on this goal?"
 					                                          />
 					                                        </div>
 			                                      </div>
@@ -7325,9 +8371,9 @@ import UserManagement from './components/UserManagement';
 			                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
 			                        <div className="flex items-center justify-between mb-3">
 			                          <div className="font-bold text-gray-800">Goals</div>
-			                          <div className="text-xs text-gray-500">Select goal(s), add rating, how addressed, and next steps.</div>
+			                          <div className="text-xs text-gray-500">Check goals addressed, describe how, and plan next steps.</div>
 			                        </div>
-	
+
 			                        <div className="space-y-3">
 			                          {match.goals.map((g) => {
 			                            const checked = Boolean(formData.goals_selected?.[g.key]);
@@ -7344,19 +8390,15 @@ import UserManagement from './components/UserManagement';
 			                                        const next = { ...prev };
 			                                        const selected = { ...(next.goals_selected || {}) };
 			                                        const addressed = { ...(next.goals_addressed || {}) };
-			                                        const ratings = { ...(next.goals_ratings || {}) };
 			                                        const nextSteps = { ...(next.goals_next_steps || {}) };
 			                                        if (isChecked) selected[g.key] = true;
 			                                        else delete selected[g.key];
-			                                        if (isChecked && !ratings[g.key]) ratings[g.key] = "NA";
 			                                        if (!isChecked) {
 			                                          delete addressed[g.key];
-			                                          delete ratings[g.key];
 			                                          delete nextSteps[g.key];
 			                                        }
 			                                        next.goals_selected = selected;
 			                                        next.goals_addressed = addressed;
-			                                        next.goals_ratings = ratings;
 			                                        next.goals_next_steps = nextSteps;
 			                                        return next;
 			                                      });
@@ -7366,23 +8408,9 @@ import UserManagement from './components/UserManagement';
 			                                    <div className="text-sm font-semibold text-gray-900">{g.text}</div>
 			                                    {checked && (
 			                                      <div className="mt-3 space-y-3">
-				                                        <InputField
-				                                          label="Progress Rating"
-				                                          type="select"
-				                                          options={GOAL_RATINGS}
-				                                          value={formData.goals_ratings?.[g.key] || "NA"}
-			                                          onChange={(e) => {
-			                                            const value = e.target.value;
-			                                            setFormData((prev) => ({
-			                                              ...prev,
-			                                              goals_ratings: { ...(prev.goals_ratings || {}), [g.key]: value },
-			                                            }));
-			                                          }}
-				                                        />
-
 						                                        <div>
 						                                          <div className="flex items-center justify-between gap-3 mb-1">
-						                                            <div className="text-xs font-bold text-gray-600">How was this addressed?</div>
+						                                            <div className="text-xs font-bold text-gray-600">How was this goal addressed?</div>
 						                                            <DictationButton
 						                                              title="Dictate how this goal was addressed"
 						                                              className="py-1 px-2 text-xs"
@@ -7406,15 +8434,15 @@ import UserManagement from './components/UserManagement';
 			                                                goals_addressed: { ...(prev.goals_addressed || {}), [g.key]: value },
 			                                              }));
 			                                            }}
-					                                            placeholder="What did you do/observe related to this goal?"
+					                                            placeholder="Describe what you did or observed related to this goal..."
 					                                          />
 					                                        </div>
 
 						                                        <div>
 						                                          <div className="flex items-center justify-between gap-3 mb-1">
-						                                            <div className="text-xs font-bold text-gray-600">Next steps to continue</div>
+						                                            <div className="text-xs font-bold text-gray-600">Plan to continue</div>
 						                                            <DictationButton
-						                                              title="Dictate next steps"
+						                                              title="Dictate plan to continue"
 						                                              className="py-1 px-2 text-xs"
 						                                              onText={(t) => {
 						                                                const current = formData.goals_next_steps?.[g.key] || "";
@@ -7436,7 +8464,7 @@ import UserManagement from './components/UserManagement';
 			                                                goals_next_steps: { ...(prev.goals_next_steps || {}), [g.key]: value },
 			                                              }));
 			                                            }}
-					                                            placeholder="What will you/they do next?"
+					                                            placeholder="What will you do next to continue working on this goal?"
 					                                          />
 					                                        </div>
 			                                      </div>
@@ -7598,6 +8626,197 @@ import UserManagement from './components/UserManagement';
 	                  </div>
 	                )}
 
+	                {isCancelledForWeather && currentService && (
+	                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+	                    <div className="font-bold text-gray-900 mb-2">Cancelled for Weather - Documentation</div>
+	                    <div className="text-sm text-gray-700 mb-4">
+	                      Explain the weather conditions that led to the cancellation.
+	                    </div>
+
+	                    <InputField
+	                      label="Weather Explanation"
+	                      type="textarea"
+	                      required={true}
+	                      value={formData.weather_explanation || ""}
+	                      onChange={(e) => handleInputChange("weather_explanation", e.target.value)}
+	                      placeholder="Describe the weather conditions (e.g., ice, snow, flooding, severe storms) that made travel unsafe or prevented the visit..."
+	                    >
+	                      <DictationButton
+	                        title="Dictate Weather Explanation"
+	                        onText={(t) => handleInputChange("weather_explanation", appendText(formData.weather_explanation, t))}
+	                      />
+	                    </InputField>
+
+	                    <InputField
+	                      label="Notification to DHHS Case Manager"
+	                      type="textarea"
+	                      required={true}
+	                      value={formData.cancellation_notification || ""}
+	                      onChange={(e) => handleInputChange("cancellation_notification", e.target.value)}
+	                      placeholder="Document that you notified the DHHS Case Manager. Include who, how, and when."
+	                    >
+	                      <DictationButton
+	                        title="Dictate Notification"
+	                        onText={(t) => handleInputChange("cancellation_notification", appendText(formData.cancellation_notification, t))}
+	                      />
+	                    </InputField>
+
+	                    <InputField
+	                      label="Will this visit be made up?"
+	                      type="select"
+	                      required={true}
+	                      options={["Yes", "No"]}
+	                      value={formData.cancellation_will_makeup || ""}
+	                      onChange={(e) => handleInputChange("cancellation_will_makeup", e.target.value)}
+	                    />
+
+	                    {formData.cancellation_will_makeup === "Yes" && (
+	                      <InputField
+	                        label="When will the visit be made up?"
+	                        type="text"
+	                        required={true}
+	                        value={formData.cancellation_makeup_date || ""}
+	                        onChange={(e) => handleInputChange("cancellation_makeup_date", e.target.value)}
+	                        placeholder="Enter date/time when the visit will be rescheduled..."
+	                      />
+	                    )}
+
+	                    {formData.cancellation_will_makeup === "No" && (
+	                      <InputField
+	                        label="Why will the visit not be made up?"
+	                        type="textarea"
+	                        required={true}
+	                        value={formData.cancellation_no_makeup_reason || ""}
+	                        onChange={(e) => handleInputChange("cancellation_no_makeup_reason", e.target.value)}
+	                        placeholder="Explain why the visit cannot be rescheduled..."
+	                      >
+	                        <DictationButton
+	                          title="Dictate Reason"
+	                          onText={(t) => handleInputChange("cancellation_no_makeup_reason", appendText(formData.cancellation_no_makeup_reason, t))}
+	                        />
+	                      </InputField>
+	                    )}
+	                  </div>
+	                )}
+
+	                {isCancelledByTeam && currentService && (
+	                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+	                    <div className="font-bold text-gray-900 mb-2">Cancelled by Team - Documentation</div>
+	                    <div className="text-sm text-gray-700 mb-4">
+	                      Document the reason for team-initiated cancellation and makeup plan.
+	                    </div>
+
+	                    <InputField
+	                      label="Notification to DHHS Case Manager"
+	                      type="textarea"
+	                      required={true}
+	                      value={formData.cancellation_notification || ""}
+	                      onChange={(e) => handleInputChange("cancellation_notification", e.target.value)}
+	                      placeholder="Document that you notified the DHHS Case Manager. Include who, how, and when."
+	                    >
+	                      <DictationButton
+	                        title="Dictate Notification"
+	                        onText={(t) => handleInputChange("cancellation_notification", appendText(formData.cancellation_notification, t))}
+	                      />
+	                    </InputField>
+
+	                    <InputField
+	                      label="Will this visit be made up?"
+	                      type="select"
+	                      required={true}
+	                      options={["Yes", "No"]}
+	                      value={formData.cancellation_will_makeup || ""}
+	                      onChange={(e) => handleInputChange("cancellation_will_makeup", e.target.value)}
+	                    />
+
+	                    {formData.cancellation_will_makeup === "Yes" && (
+	                      <InputField
+	                        label="When will the visit be made up?"
+	                        type="text"
+	                        required={true}
+	                        value={formData.cancellation_makeup_date || ""}
+	                        onChange={(e) => handleInputChange("cancellation_makeup_date", e.target.value)}
+	                        placeholder="Enter date/time when the visit will be rescheduled..."
+	                      />
+	                    )}
+
+	                    {formData.cancellation_will_makeup === "No" && (
+	                      <InputField
+	                        label="Why will the visit not be made up?"
+	                        type="textarea"
+	                        required={true}
+	                        value={formData.cancellation_no_makeup_reason || ""}
+	                        onChange={(e) => handleInputChange("cancellation_no_makeup_reason", e.target.value)}
+	                        placeholder="Explain why the visit cannot be rescheduled..."
+	                      >
+	                        <DictationButton
+	                          title="Dictate Reason"
+	                          onText={(t) => handleInputChange("cancellation_no_makeup_reason", appendText(formData.cancellation_no_makeup_reason, t))}
+	                        />
+	                      </InputField>
+	                    )}
+	                  </div>
+	                )}
+
+	                {isCancelledNoConfirmation && currentService && (
+	                  <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+	                    <div className="font-bold text-gray-900 mb-2">Cancelled - No Confirmation</div>
+	                    <div className="text-sm text-gray-700 mb-4">
+	                      Document the attempts made to confirm the visit.
+	                    </div>
+
+	                    <InputField
+	                      label="Notification to DHHS Case Manager"
+	                      type="textarea"
+	                      required={true}
+	                      value={formData.cancellation_notification || ""}
+	                      onChange={(e) => handleInputChange("cancellation_notification", e.target.value)}
+	                      placeholder="Document that you notified the DHHS Case Manager. Include who, how, and when."
+	                    >
+	                      <DictationButton
+	                        title="Dictate Notification"
+	                        onText={(t) => handleInputChange("cancellation_notification", appendText(formData.cancellation_notification, t))}
+	                      />
+	                    </InputField>
+
+	                    <InputField
+	                      label="Will this visit be made up?"
+	                      type="select"
+	                      required={true}
+	                      options={["Yes", "No"]}
+	                      value={formData.cancellation_will_makeup || ""}
+	                      onChange={(e) => handleInputChange("cancellation_will_makeup", e.target.value)}
+	                    />
+
+	                    {formData.cancellation_will_makeup === "Yes" && (
+	                      <InputField
+	                        label="When will the visit be made up?"
+	                        type="text"
+	                        required={true}
+	                        value={formData.cancellation_makeup_date || ""}
+	                        onChange={(e) => handleInputChange("cancellation_makeup_date", e.target.value)}
+	                        placeholder="Enter date/time when the visit will be rescheduled..."
+	                      />
+	                    )}
+
+	                    {formData.cancellation_will_makeup === "No" && (
+	                      <InputField
+	                        label="Why will the visit not be made up?"
+	                        type="textarea"
+	                        required={true}
+	                        value={formData.cancellation_no_makeup_reason || ""}
+	                        onChange={(e) => handleInputChange("cancellation_no_makeup_reason", e.target.value)}
+	                        placeholder="Explain why the visit cannot be rescheduled..."
+	                      >
+	                        <DictationButton
+	                          title="Dictate Reason"
+	                          onText={(t) => handleInputChange("cancellation_no_makeup_reason", appendText(formData.cancellation_no_makeup_reason, t))}
+	                        />
+	                      </InputField>
+	                    )}
+	                  </div>
+	                )}
+
 		                {currentService && !isRemoteContact && (
 		                  <div className="mt-6 pt-6 border-t border-gray-100">
 		                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">{currentService} Documentation Requirements</h3>
@@ -7652,6 +8871,104 @@ import UserManagement from './components/UserManagement';
 		                              value={formData.test_mailed || ""}
 		                              onChange={(e) => handleInputChange("test_mailed", e.target.value)}
 		                            />
+
+		                            {/* Date Test Sent - shown when test is mailed */}
+		                            {formData.test_mailed === "Yes" && (
+		                              <InputField
+		                                label="Date Test Sent"
+		                                type="date"
+		                                value={formData.sp_date_sent || ""}
+		                                onChange={(e) => handleInputChange("sp_date_sent", e.target.value)}
+		                              />
+		                            )}
+
+		                            {/* Sweat Patch Results Section */}
+		                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-4 mt-4">
+		                              <p className="text-sm font-semibold text-purple-800 flex items-center">
+		                                <LucideIcon name="FileText" className="w-4 h-4 mr-2" />
+		                                Sweat Patch Results (enter when received)
+		                              </p>
+		                              <InputField
+		                                label="Sweat Patch Result"
+		                                type="select"
+		                                options={["", "Negative", "Positive", "Tampered"]}
+		                                value={formData.sp_test_result || ""}
+		                                onChange={(e) => handleInputChange("sp_test_result", e.target.value)}
+		                              />
+
+		                              {/* Positive Result - Show drug list and admission fields */}
+		                              {formData.sp_test_result === "Positive" && (
+		                                <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-4">
+		                                  <p className="text-sm font-semibold text-red-800 flex items-center">
+		                                    <LucideIcon name="AlertCircle" className="w-4 h-4 mr-2" />
+		                                    Positive Result Documentation
+		                                  </p>
+
+		                                  <InputField
+		                                    label="Did the client admit to using?"
+		                                    type="select"
+		                                    options={["Yes", "No"]}
+		                                    value={formData.sp_client_admitted_use || ""}
+		                                    onChange={(e) => handleInputChange("sp_client_admitted_use", e.target.value)}
+		                                  />
+
+		                                  {formData.sp_client_admitted_use === "No" && (
+		                                    <InputField
+		                                      label="If client did not admit, document explanation"
+		                                      type="textarea"
+		                                      value={formData.sp_non_admission_explanation || ""}
+		                                      onChange={(e) => handleInputChange("sp_non_admission_explanation", e.target.value)}
+		                                      placeholder="Document why the client did not admit to using..."
+		                                    >
+		                                      <DictationButton
+		                                        title="Dictate explanation"
+		                                        onText={(t) => handleInputChange("sp_non_admission_explanation", appendText(formData.sp_non_admission_explanation, t))}
+		                                      />
+		                                    </InputField>
+		                                  )}
+
+		                                  <InputField
+		                                    label="Drugs Tested Positive For (select all that apply)"
+		                                    type="multiselect"
+		                                    options={["Alcohol", "Amphetamines", "Barbiturates", "Benzodiazepines", "Buprenorphine", "Cocaine", "EDDP (Methadone Metabolite)", "Fentanyl", "Marijuana (THC)", "MDMA (Ecstasy)", "Methadone", "Methamphetamine", "Opiates", "Oxycodone", "Phencyclidine (PCP)", "Tramadol", "Tricyclic Antidepressants", "Other"]}
+		                                    value={formData.sp_drugs_tested_positive || ""}
+		                                    onChange={(e) => handleInputChange("sp_drugs_tested_positive", e.target.value)}
+		                                  />
+
+		                                  {(formData.sp_drugs_tested_positive || "").includes("Other") && (
+		                                    <InputField
+		                                      label="If Other, please specify"
+		                                      type="text"
+		                                      value={formData.sp_other_drug_specify || ""}
+		                                      onChange={(e) => handleInputChange("sp_other_drug_specify", e.target.value)}
+		                                      placeholder="Specify other drug(s)..."
+		                                    />
+		                                  )}
+		                                </div>
+		                              )}
+
+		                              {/* Tampered Result - Show documentation */}
+		                              {formData.sp_test_result === "Tampered" && (
+		                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-4">
+		                                  <p className="text-sm font-semibold text-orange-800 flex items-center">
+		                                    <LucideIcon name="XCircle" className="w-4 h-4 mr-2" />
+		                                    Tampered Documentation (Counts as Positive)
+		                                  </p>
+		                                  <InputField
+		                                    label="Document tampered circumstances"
+		                                    type="textarea"
+		                                    value={formData.sp_tampered_explanation || ""}
+		                                    onChange={(e) => handleInputChange("sp_tampered_explanation", e.target.value)}
+		                                    placeholder="Document circumstances of tampering, evidence, observations, etc..."
+		                                  >
+		                                    <DictationButton
+		                                      title="Dictate tampered explanation"
+		                                      onText={(t) => handleInputChange("sp_tampered_explanation", appendText(formData.sp_tampered_explanation, t))}
+		                                    />
+		                                  </InputField>
+		                                </div>
+		                              )}
+		                            </div>
 		                          </div>
 		                        )}
 
@@ -7740,6 +9057,91 @@ import UserManagement from './components/UserManagement';
 		                            )}
 		                          </div>
 		                        )}
+
+		                        {/* Lab Submission — all drug testing types */}
+		                        {(() => {
+		                          const isLabBasedTest = currentService === "DST-SP" || currentService === "DST-HF";
+		                          const showLabUpload = isLabBasedTest || formData.sent_to_lab === "Yes";
+		                          return (
+		                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-4 mt-4">
+		                          <p className="text-sm font-semibold text-indigo-800 flex items-center">
+		                            <LucideIcon name="FlaskConical" className="w-4 h-4 mr-2" />
+		                            {isLabBasedTest ? "Lab Results" : "Lab Submission"}
+		                          </p>
+		                          {isLabBasedTest ? (
+		                            <p className="text-xs text-indigo-600">
+		                              {currentService === "DST-SP" ? "Sweat patch" : "Hair follicle"} specimens are always sent to the lab. Upload a screenshot or paste the lab report text below.
+		                            </p>
+		                          ) : (
+		                          <InputField
+		                            label="Is this test being sent to the lab?"
+		                            type="select"
+		                            options={["Yes", "No"]}
+		                            value={formData.sent_to_lab || ""}
+		                            onChange={(e) => handleInputChange("sent_to_lab", e.target.value)}
+		                          />
+		                          )}
+
+		                          {/* Lab results upload + paste area */}
+		                          {showLabUpload && (
+		                            <div className="space-y-3 bg-white rounded-lg p-4 border border-indigo-100">
+		                              <p className="text-sm text-indigo-700 font-medium flex items-center">
+		                                <LucideIcon name="Upload" className="w-4 h-4 mr-2" />
+		                                Upload Lab Results Screenshot
+		                              </p>
+		                              <input
+		                                type="file"
+		                                accept="image/*"
+		                                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200"
+		                                onChange={(e) => {
+		                                  const file = e.target.files?.[0];
+		                                  if (file) handleLabImageUpload(file);
+		                                }}
+		                                disabled={labResultLoading}
+		                              />
+		                              {labResultLoading && (
+		                                <div className="flex items-center space-x-2 text-sm text-indigo-600">
+		                                  <LucideIcon name="Loader2" className="w-4 h-4 animate-spin" />
+		                                  <span>Extracting lab results...</span>
+		                                </div>
+		                              )}
+		                              <div className="space-y-2">
+		                                <p className="text-sm font-medium text-gray-700">{formData.lab_result_text ? "Lab Results:" : "Or paste lab report text:"}</p>
+		                                <textarea
+		                                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors shadow-sm text-gray-900 bg-white text-sm min-h-[120px]"
+		                                  value={formData.lab_result_text || ""}
+		                                  onChange={(e) => handleInputChange("lab_result_text", e.target.value)}
+		                                  placeholder="Upload a screenshot above to auto-extract, or paste lab report text directly here..."
+		                                />
+		                              </div>
+		                            </div>
+		                          )}
+
+		                          {/* Not sent to lab + positive/tampered/refusal → reason narrative */}
+		                          {formData.sent_to_lab === "No" && (() => {
+		                            const needsReason =
+		                              (currentService === "DST-SP" && ["Positive", "Tampered"].includes(formData.sp_test_result)) ||
+		                              (isUAorMS(currentService) && ["Positive", "Refusal"].includes(formData.test_result));
+		                            return needsReason;
+		                          })() && (
+		                            <div className="space-y-2 bg-white rounded-lg p-4 border border-indigo-100">
+		                              <InputField
+		                                label="Why is this test not being sent to the lab?"
+		                                type="textarea"
+		                                value={formData.not_sent_to_lab_reason || ""}
+		                                onChange={(e) => handleInputChange("not_sent_to_lab_reason", e.target.value)}
+		                                placeholder="Document the reason this test is not being sent to the lab (e.g., client admitted use)..."
+		                              >
+		                                <DictationButton
+		                                  title="Dictate reason"
+		                                  onText={(t) => handleInputChange("not_sent_to_lab_reason", appendText(formData.not_sent_to_lab_reason, t))}
+		                                />
+		                              </InputField>
+		                            </div>
+		                          )}
+		                        </div>
+		                          );
+		                        })()}
 		                      </div>
 		                    )}
 
@@ -7826,7 +9228,7 @@ import UserManagement from './components/UserManagement';
 				                          key={colConfig.id}
 				                          label={colConfig.name}
 				                          type={colConfig.type}
-				                          options={colConfig.options}
+				                          options={colConfig.id === "worker_name" ? WORKER_NAMES : colConfig.options}
 				                          value={formData[colConfig.id] || ""}
 				                          onChange={(e) => handleInputChange(colConfig.id, e.target.value)}
 				                          placeholder={`Enter ${colConfig.name}`}
@@ -7906,7 +9308,7 @@ import UserManagement from './components/UserManagement';
                     </div>
                   </div>
 
-	                  <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
+	                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-x-8 mb-8 bg-gray-50 p-4 rounded-lg border border-gray-200">
 	                    <div>
 	                      <span className="text-xs font-bold text-gray-500 uppercase block">Worker</span>
 	                      <span className="text-gray-900 font-medium">{previewNote.worker_name || ""}</span>
@@ -7926,7 +9328,7 @@ import UserManagement from './components/UserManagement';
                     <div>
                       <span className="text-xs font-bold text-gray-500 uppercase block">Time</span>
                       <span className="text-gray-900 font-medium">
-                        {previewNote.start_time} - {previewNote.end_time}
+                        {formatTime12h(previewNote.start_time)} - {formatTime12h(previewNote.end_time)}
                       </span>
                     </div>
                     <div>
@@ -7956,14 +9358,60 @@ import UserManagement from './components/UserManagement';
 	                        </div>
 
 	                        {previewNote.service_type === "DST-SP" && (
-	                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-	                            <h3 className="text-sm font-bold text-gray-900 uppercase border-b border-gray-200 pb-1 mb-3">Sweat Patch Documentation</h3>
-	                            <div className="grid grid-cols-2 gap-4 text-sm">
-	                              <div><span className="font-semibold text-gray-600">Patch Removed:</span> <span className="text-gray-900">{previewNote.patch_removed || "N/A"}</span></div>
-	                              <div><span className="font-semibold text-gray-600">New Patch Applied:</span> <span className="text-gray-900">{previewNote.new_patch_applied || "N/A"}</span></div>
-	                              <div><span className="font-semibold text-gray-600">Client Willing to Continue:</span> <span className="text-gray-900">{previewNote.client_willing_continue || "N/A"}</span></div>
-	                              <div><span className="font-semibold text-gray-600">Test Mailed:</span> <span className="text-gray-900">{previewNote.test_mailed || "N/A"}</span></div>
+	                          <div className="space-y-4">
+	                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+	                              <h3 className="text-sm font-bold text-gray-900 uppercase border-b border-gray-200 pb-1 mb-3">Sweat Patch Documentation</h3>
+	                              <div className="grid grid-cols-2 gap-4 text-sm">
+	                                <div><span className="font-semibold text-gray-600">Patch Removed:</span> <span className="text-gray-900">{previewNote.patch_removed || "N/A"}</span></div>
+	                                <div><span className="font-semibold text-gray-600">New Patch Applied:</span> <span className="text-gray-900">{previewNote.new_patch_applied || "N/A"}</span></div>
+	                                <div><span className="font-semibold text-gray-600">Client Willing to Continue:</span> <span className="text-gray-900">{previewNote.client_willing_continue || "N/A"}</span></div>
+	                                <div><span className="font-semibold text-gray-600">Test Mailed:</span> <span className="text-gray-900">{previewNote.test_mailed || "N/A"}</span></div>
+	                                {previewNote.sp_date_sent && (
+	                                  <div><span className="font-semibold text-gray-600">Date Test Sent:</span> <span className="text-gray-900">{previewNote.sp_date_sent}</span></div>
+	                                )}
+	                              </div>
 	                            </div>
+
+	                            {/* Sweat Patch Results */}
+	                            {previewNote.sp_test_result ? (
+	                              <div className={`rounded-lg p-4 ${previewNote.sp_test_result === "Negative" ? "bg-green-50 border border-green-200" : previewNote.sp_test_result === "Positive" ? "bg-red-50 border border-red-200" : previewNote.sp_test_result === "Tampered" ? "bg-orange-50 border border-orange-200" : "bg-gray-50 border border-gray-200"}`}>
+	                                <h3 className="text-sm font-bold text-gray-900 uppercase border-b border-gray-200 pb-1 mb-2">Sweat Patch Result</h3>
+	                                <div className={`font-bold text-lg ${previewNote.sp_test_result === "Negative" ? "text-green-700" : previewNote.sp_test_result === "Positive" ? "text-red-700" : previewNote.sp_test_result === "Tampered" ? "text-orange-700" : "text-gray-700"}`}>
+	                                  {previewNote.sp_test_result}
+	                                </div>
+
+	                                {previewNote.sp_test_result === "Positive" && (
+	                                  <div className="mt-3 space-y-2 text-sm">
+	                                    <div><span className="font-semibold text-gray-600">Client Admitted to Using:</span> <span className="text-gray-900">{previewNote.sp_client_admitted_use || "N/A"}</span></div>
+	                                    {previewNote.sp_client_admitted_use === "No" && previewNote.sp_non_admission_explanation && (
+	                                      <div>
+	                                        <span className="font-semibold text-gray-600 block mb-1">Non-Admission Explanation:</span>
+	                                        <div className="text-gray-700 whitespace-pre-wrap bg-white p-2 rounded border">{previewNote.sp_non_admission_explanation}</div>
+	                                      </div>
+	                                    )}
+	                                    {previewNote.sp_drugs_tested_positive && (
+	                                      <div><span className="font-semibold text-gray-600">Drugs Tested Positive For:</span> <span className="text-gray-900">{previewNote.sp_drugs_tested_positive}</span></div>
+	                                    )}
+	                                    {previewNote.sp_other_drug_specify && (
+	                                      <div><span className="font-semibold text-gray-600">Other Drug(s):</span> <span className="text-gray-900">{previewNote.sp_other_drug_specify}</span></div>
+	                                    )}
+	                                  </div>
+	                                )}
+
+	                                {previewNote.sp_test_result === "Tampered" && previewNote.sp_tampered_explanation && (
+	                                  <div className="mt-3 text-sm">
+	                                    <p className="text-sm font-semibold text-orange-800 mb-1">Tampered (Counts as Positive)</p>
+	                                    <span className="font-semibold text-gray-600 block mb-1">Tampered Circumstances:</span>
+	                                    <div className="text-gray-700 whitespace-pre-wrap bg-white p-2 rounded border">{previewNote.sp_tampered_explanation}</div>
+	                                  </div>
+	                                )}
+	                              </div>
+	                            ) : (
+	                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+	                                <h3 className="text-sm font-bold text-gray-900 uppercase border-b border-gray-200 pb-1 mb-2">Sweat Patch Result</h3>
+	                                <div className="text-gray-500 italic">Results pending</div>
+	                              </div>
+	                            )}
 	                          </div>
 	                        )}
 
@@ -8005,6 +9453,32 @@ import UserManagement from './components/UserManagement';
 	                                )}
 	                              </div>
 	                            )}
+	                          </div>
+	                        )}
+
+	                        {/* Lab Results Preview */}
+	                        {previewNote.lab_result_text && (
+	                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mt-4">
+	                            <h3 className="text-sm font-bold text-indigo-900 uppercase border-b border-indigo-200 pb-1 mb-2 flex items-center">
+	                              <LucideIcon name="FlaskConical" className="w-4 h-4 mr-2" />
+	                              {["DST-SP", "DST-HF"].includes(previewNote.service_type) ? "Lab Report Results" : "Lab Results"}
+	                            </h3>
+	                            <div className="text-gray-700 whitespace-pre-wrap bg-white p-3 rounded border text-sm">{previewNote.lab_result_text}</div>
+	                          </div>
+	                        )}
+	                        {!previewNote.lab_result_text && previewNote.sent_to_lab === "Yes" && (
+	                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+	                            <h3 className="text-sm font-bold text-yellow-900 uppercase border-b border-yellow-200 pb-1 mb-2 flex items-center">
+	                              <LucideIcon name="FlaskConical" className="w-4 h-4 mr-2" />
+	                              Lab Submission
+	                            </h3>
+	                            <div className="text-gray-700 text-sm">Specimen sent to lab — results pending.</div>
+	                          </div>
+	                        )}
+	                        {previewNote.sent_to_lab === "No" && previewNote.not_sent_to_lab_reason && (
+	                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4">
+	                            <h3 className="text-sm font-bold text-gray-900 uppercase border-b border-gray-200 pb-1 mb-2">Not Sent to Lab</h3>
+	                            <div className="text-gray-700 whitespace-pre-wrap bg-white p-3 rounded border text-sm">{previewNote.not_sent_to_lab_reason}</div>
 	                          </div>
 	                        )}
 	                      </div>
@@ -8152,6 +9626,21 @@ import UserManagement from './components/UserManagement';
 		            .filter((entry) => {
 		              const search = filterText.toLowerCase();
 		              return (entry.family_name || "").toLowerCase().includes(search) || (entry.master_case || "").toLowerCase().includes(search);
+		            })
+		            .filter((entry) => {
+		              if (!historyServiceFilter) return true;
+		              return (entry.service_type || "") === historyServiceFilter;
+		            })
+		            .sort((a, b) => {
+		              if (!historyServiceFilter) {
+		                // Group by service type in SERVICE_TYPES order, then by date within each group
+		                const aIdx = SERVICE_TYPES.indexOf(a.service_type || "");
+		                const bIdx = SERVICE_TYPES.indexOf(b.service_type || "");
+		                const aSvc = aIdx === -1 ? SERVICE_TYPES.length : aIdx;
+		                const bSvc = bIdx === -1 ? SERVICE_TYPES.length : bIdx;
+		                if (aSvc !== bSvc) return aSvc - bSvc;
+		              }
+		              return (a.date || "").localeCompare(b.date || "");
 		            });
 
 		          // Filter profiles to exclude archived ones
@@ -8189,14 +9678,14 @@ import UserManagement from './components/UserManagement';
 		          };
 
 		          return (
-			            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden flex flex-col h-full max-h-[calc(100vh-220px)] lg:max-h-[calc(100vh-200px)] mb-20">
-			              <div className="px-6 py-4 border-b border-gray-200 flex flex-col lg:flex-row justify-between items-start lg:items-center bg-gray-50 gap-4">
+			            <div className="bg-white rounded-none sm:rounded-2xl shadow-none sm:shadow-lg border-0 sm:border sm:border-gray-100 overflow-hidden flex flex-col max-h-none sm:max-h-[calc(100vh-160px)] lg:max-h-[calc(100vh-200px)] mb-0 sm:mb-20">
+			              <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex flex-col lg:flex-row justify-between items-start lg:items-center bg-gray-50 gap-3 sm:gap-4">
 		                <h2 className="text-lg font-bold text-gray-800 flex items-center">
 		                  <LucideIcon name="Table" className="w-5 h-5 mr-2 text-[var(--brand-navy)]" />
 	                  Note History ({historyMode === "entries" ? filteredEntries.length : filteredProfiles.length})
 	                </h2>
 
-			                <div className="flex w-full lg:w-auto gap-3 flex-wrap">
+			                <div className="flex w-full lg:w-auto gap-2 sm:gap-3 flex-wrap">
 			                  <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
 			                    <button
 			                      type="button"
@@ -8214,15 +9703,16 @@ import UserManagement from './components/UserManagement';
 		                    </button>
 		                  </div>
 
-				                  <div className="flex items-center gap-3 bg-white border border-gray-300 rounded-xl px-4 py-3 w-full sm:w-auto min-w-[320px] lg:min-w-[420px]">
+				                  <div className="flex items-center gap-2 sm:gap-3 bg-white border border-gray-300 rounded-xl px-3 sm:px-4 py-2 sm:py-3 w-full lg:min-w-[420px]">
 			                    <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">Client</div>
 			                    <select
 			                      value={historyClientKey}
 			                      onChange={(e) => {
 			                        setHistoryClientKey(e.target.value);
+			                        setHistoryServiceFilter("");
 			                        setSelectedEntryIds({});
 			                      }}
-			                      className="bg-white text-sm text-gray-900 focus:outline-none flex-1 min-w-[220px] px-2 py-1"
+			                      className="bg-white text-sm text-gray-900 focus:outline-none flex-1 min-w-0 px-2 py-1"
 			                    >
 			                      <option value="">All Clients</option>
 			                      {clientOptions.map((o) => (
@@ -8233,20 +9723,20 @@ import UserManagement from './components/UserManagement';
 			                    </select>
 			                  </div>
 
-			                  <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-3">
+			                  <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-3 sm:px-4 py-2 sm:py-3 w-full lg:w-auto flex-wrap">
 			                    <div className="text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">Date</div>
 			                    <input
 			                      type="date"
 			                      value={historyDateStart}
 			                      onChange={(e) => setHistoryDateStart(e.target.value)}
-			                      className="bg-white text-sm text-gray-900 focus:outline-none px-2 py-1 border-r border-gray-200"
+			                      className="bg-white text-sm text-gray-900 focus:outline-none px-1 sm:px-2 py-1 border-r border-gray-200 min-w-0 flex-1"
 			                    />
 			                    <span className="text-gray-400 text-sm">to</span>
 			                    <input
 			                      type="date"
 			                      value={historyDateEnd}
 			                      onChange={(e) => setHistoryDateEnd(e.target.value)}
-			                      className="bg-white text-sm text-gray-900 focus:outline-none px-2 py-1"
+			                      className="bg-white text-sm text-gray-900 focus:outline-none px-1 sm:px-2 py-1 min-w-0 flex-1"
 			                    />
 			                    {(historyDateStart || historyDateEnd) && (
 			                      <button
@@ -8258,6 +9748,23 @@ import UserManagement from './components/UserManagement';
 			                        <LucideIcon name="X" className="w-4 h-4" />
 			                      </button>
 			                    )}
+			                  </div>
+
+			                  <div className="flex items-center gap-2 sm:gap-3 bg-white border border-gray-300 rounded-xl px-3 sm:px-4 py-2 sm:py-3 w-full lg:min-w-[220px]">
+			                    <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">Service</div>
+			                    <select
+			                      value={historyServiceFilter}
+			                      onChange={(e) => {
+			                        setHistoryServiceFilter(e.target.value);
+			                        setSelectedEntryIds({});
+			                      }}
+			                      className="bg-white text-sm text-gray-900 focus:outline-none flex-1 min-w-0 px-2 py-1"
+			                    >
+			                      <option value="">All Services</option>
+			                      {SERVICE_TYPES.map((svc) => (
+			                        <option key={svc} value={svc}>{svc}</option>
+			                      ))}
+			                    </select>
 			                  </div>
 
 		                  {historyClientKey && isAdmin && (
@@ -8275,7 +9782,7 @@ import UserManagement from './components/UserManagement';
 		                    </Button>
 		                  )}
 
-			                  <div className="relative flex-grow w-full sm:w-auto sm:min-w-[260px] lg:min-w-[320px]">
+			                  <div className="relative w-full lg:flex-grow lg:min-w-[320px]">
 	                    <input
 	                      type="text"
 	                      placeholder="Search Family or Case..."
@@ -8333,6 +9840,15 @@ import UserManagement from './components/UserManagement';
 		                          </Button>
 		                          <Button onClick={downloadCSV} variant="secondary" iconName="Download" className="text-sm whitespace-nowrap h-12 px-5 rounded-xl">
 		                            Export CSV
+		                          </Button>
+		                          <Button
+		                            onClick={batchExportCaseNotes}
+		                            variant="secondary"
+		                            iconName="PackageOpen"
+		                            className="text-sm whitespace-nowrap h-12 px-5 rounded-xl"
+		                            disabled={batchExportLoading}
+		                          >
+		                            {batchExportLoading ? (batchExportProgress || "Exporting...") : "Batch Print All"}
 		                          </Button>
 		                        </>
 		                      )}
@@ -8541,7 +10057,7 @@ import UserManagement from './components/UserManagement';
 	                            />
 	                          </td>
 	                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-	                            {entry.date} <span className="text-gray-400 text-xs ml-1">({entry.start_time})</span>
+	                            {normalize(entry.date)} <span className="text-gray-400 text-xs ml-1">({formatTime12h(normalize(entry.start_time))})</span>
 	                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             <span
@@ -8553,12 +10069,12 @@ import UserManagement from './components/UserManagement';
                                     : "bg-green-100 text-green-800"
                               }`}
                             >
-                              {entry.service_type}
+                              {normalize(entry.service_type)}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <div className="font-medium">{entry.family_name}</div>
-                            <div className="text-xs text-gray-500">{entry.master_case}</div>
+                            <div className="font-medium">{normalize(entry.family_name)}</div>
+                            <div className="text-xs text-gray-500">{normalize(entry.master_case)}</div>
 	                          </td>
 		                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
 		                            <div className="flex justify-end space-x-2">
@@ -8598,7 +10114,7 @@ import UserManagement from './components/UserManagement';
 	                          <div className="font-bold text-gray-900">{entry.family_name}</div>
 	                          <div className="text-xs text-gray-500 mb-1">Case: {entry.master_case}</div>
 	                          <div className="text-sm text-gray-500">
-	                            {entry.date} • {entry.start_time}
+	                            {entry.date} • {formatTime12h(entry.start_time)}
 	                          </div>
 	                        </div>
 	                        <div className="flex flex-col items-end gap-2">
@@ -8629,23 +10145,23 @@ import UserManagement from './components/UserManagement';
 	                        </span>
 	                        </div>
 	                      </div>
-		                      <div className="flex justify-end pt-2 border-t border-gray-100 space-x-3">
+		                      <div className="grid grid-cols-2 sm:flex sm:justify-end pt-2 border-t border-gray-100 gap-1 sm:gap-3">
 		                        <button
 		                          onClick={() => startEditEntry(entry)}
-		                          className="text-[var(--brand-navy)] text-sm flex items-center px-2 py-1 hover:bg-slate-50 rounded"
+		                          className="text-[var(--brand-navy)] text-sm flex items-center justify-center px-2 py-2 hover:bg-slate-50 rounded"
 		                        >
 		                          <LucideIcon name="Edit2" className="w-4 h-4 mr-1" /> Edit
 		                        </button>
 		                        <button
 		                          onClick={() => printCaseNotes([entry])}
-		                          className="text-gray-700 text-sm flex items-center px-2 py-1 hover:bg-gray-50 rounded"
+		                          className="text-gray-700 text-sm flex items-center justify-center px-2 py-2 hover:bg-gray-50 rounded"
 		                        >
 	                          <LucideIcon name="Printer" className="w-4 h-4 mr-1" /> Print
 	                        </button>
-	                        <button onClick={() => setPreviewNote(entry)} className="text-[var(--brand-navy)] text-sm flex items-center px-2 py-1 hover:bg-slate-50 rounded">
-	                          <LucideIcon name="FileText" className="w-4 h-4 mr-1" /> View Note
+	                        <button onClick={() => setPreviewNote(entry)} className="text-[var(--brand-navy)] text-sm flex items-center justify-center px-2 py-2 hover:bg-slate-50 rounded">
+	                          <LucideIcon name="FileText" className="w-4 h-4 mr-1" /> View
 	                        </button>
-	                        <button onClick={() => handleDelete(entry.id)} className="text-red-500 text-sm flex items-center px-2 py-1 hover:bg-red-50 rounded">
+	                        <button onClick={() => handleDelete(entry.id)} className="text-red-500 text-sm flex items-center justify-center px-2 py-2 hover:bg-red-50 rounded">
 	                          <LucideIcon name="Trash2" className="w-4 h-4 mr-1" /> Delete
 	                        </button>
 	                      </div>
@@ -8719,6 +10235,18 @@ import UserManagement from './components/UserManagement';
             Parent_1: profile.parents?.[0] || "",
             Parent_2: profile.parents?.[1] || "",
             Parent_3: profile.parents?.[2] || "",
+            Parent_1_Gender: profile.raw?.Parent_1_Gender || "",
+            Parent_2_Gender: profile.raw?.Parent_2_Gender || "",
+            Parent_3_Gender: profile.raw?.Parent_3_Gender || "",
+            Parent_1_Relationship: profile.raw?.Parent_1_Relationship || "",
+            Parent_1_Age_Range: profile.raw?.Parent_1_Age_Range || "",
+            Parent_2_Relationship: profile.raw?.Parent_2_Relationship || "",
+            Parent_2_Age_Range: profile.raw?.Parent_2_Age_Range || "",
+            Parent_3_Relationship: profile.raw?.Parent_3_Relationship || "",
+            Parent_3_Age_Range: profile.raw?.Parent_3_Age_Range || "",
+            Head_of_Household: profile.raw?.Head_of_Household || "",
+            Household_Type: profile.raw?.Household_Type || "",
+            Poverty_Level: profile.raw?.Poverty_Level || "",
             Child_1: profile.children?.[0] || "",
             Child_2: profile.children?.[1] || "",
             Child_3: profile.children?.[2] || "",
@@ -8726,6 +10254,20 @@ import UserManagement from './components/UserManagement';
             Child_5: profile.children?.[4] || "",
             Child_6: profile.children?.[5] || "",
             Child_7: profile.children?.[6] || "",
+            Child_1_Gender: profile.raw?.Child_1_Gender || "",
+            Child_1_Age_Range: profile.raw?.Child_1_Age_Range || "",
+            Child_2_Gender: profile.raw?.Child_2_Gender || "",
+            Child_2_Age_Range: profile.raw?.Child_2_Age_Range || "",
+            Child_3_Gender: profile.raw?.Child_3_Gender || "",
+            Child_3_Age_Range: profile.raw?.Child_3_Age_Range || "",
+            Child_4_Gender: profile.raw?.Child_4_Gender || "",
+            Child_4_Age_Range: profile.raw?.Child_4_Age_Range || "",
+            Child_5_Gender: profile.raw?.Child_5_Gender || "",
+            Child_5_Age_Range: profile.raw?.Child_5_Age_Range || "",
+            Child_6_Gender: profile.raw?.Child_6_Gender || "",
+            Child_6_Age_Range: profile.raw?.Child_6_Age_Range || "",
+            Child_7_Gender: profile.raw?.Child_7_Gender || "",
+            Child_7_Age_Range: profile.raw?.Child_7_Age_Range || "",
             Service_Start_Date: profile.raw?.Service_Start_Date || "",
             Service_End_Date: profile.raw?.Service_End_Date || "",
           });
@@ -8773,6 +10315,51 @@ import UserManagement from './components/UserManagement';
           }
         };
 
+        const toggleSection = (sectionKey) => {
+          setAdminExpandedSections(prev => ({
+            ...prev,
+            [sectionKey]: prev[sectionKey] === undefined ? false : !prev[sectionKey]
+          }));
+        };
+        const isSectionExpanded = (sectionKey) => adminExpandedSections[sectionKey] !== false;
+
+        const openAdminBrandedReport = ({ title, subtitle, metaLines, text, fileName }) => {
+          if (!text) return;
+          const printWindow = window.open("", "_blank", "width=850,height=700");
+          if (!printWindow) { showToast("Pop-up blocked — please allow pop-ups for this site."); return; }
+          const cleanMarkdown = (str) => str.replace(/\*\*\*(.*?)\*\*\*/g, "$1").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/^[-*]\s+/gm, "- ").replace(/`([^`]+)`/g, "$1");
+          const cleanedText = cleanMarkdown(text);
+          const lines = cleanedText.split("\n");
+          let sections = [];
+          let currentSection = { title: "", content: "" };
+          for (const line of lines) {
+            const trimmed = line.trim();
+            const isAllCapsHeader = trimmed.length > 2 && trimmed === trimmed.toUpperCase() && /[A-Z]{3,}/.test(trimmed) && !/^\d+\.$/.test(trimmed);
+            const numberedMatch = trimmed.match(/^\d+\.\s+([A-Z][A-Z\s&—\-:]+)$/);
+            if (isAllCapsHeader || numberedMatch) {
+              if (currentSection.title || currentSection.content.trim()) sections.push({ ...currentSection });
+              currentSection = { title: numberedMatch ? numberedMatch[1].trim() : trimmed, content: "" };
+            } else { currentSection.content += line + "\n"; }
+          }
+          if (currentSection.title || currentSection.content.trim()) sections.push(currentSection);
+          let sectionsHtml = "";
+          if (sections.length > 1) {
+            for (const section of sections) {
+              if (section.title) sectionsHtml += `<div class="section-title">${section.title}</div>`;
+              if (section.content.trim()) sectionsHtml += `<div class="section-content">${section.content.trim().replace(/\n/g, "<br/>")}</div>`;
+            }
+          } else { sectionsHtml = `<div class="section-content">${text.replace(/\n/g, "<br/>")}</div>`; }
+          const metaHtml = (metaLines || []).filter(Boolean).join("<br/>");
+          printWindow.document.write(`<!DOCTYPE html><html><head><title>${fileName || title + " - Epworth Family Resources"}</title><style>@page{size:letter;margin:0.5in}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;color:#1a1a1a;background:#f8fafc}.report-container{max-width:800px;margin:0 auto;background:white;min-height:100vh}.header{background:linear-gradient(135deg,#1e3a5f 0%,#2d4a6f 100%);color:white;padding:24px 32px;display:flex;justify-content:space-between;align-items:center}.header-left h1{font-size:22px;font-weight:700;letter-spacing:-0.5px}.header-left .subtitle{margin-top:4px;font-size:13px;opacity:0.85;font-weight:400}.header-right{text-align:right}.header-right .org{font-size:14px;font-weight:600;opacity:0.95}.header-right .date{font-size:12px;opacity:0.75;margin-top:2px}.content-area{padding:24px 32px}.meta-block{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#64748b;line-height:1.7}.section-title{font-size:13px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.5px;margin:24px 0 12px;padding-bottom:8px;border-bottom:2px solid #e2e8f0}.section-title:first-child{margin-top:0}.section-content{font-size:13px;line-height:1.7;color:#374151;margin-bottom:12px}.footer{margin-top:32px;padding-top:16px;border-top:2px solid #c89a2a;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#9ca3af}.footer .confidential{color:#c89a2a;font-weight:700;font-size:11px}.actions{padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;gap:8px}.btn{padding:10px 20px;cursor:pointer;background:#1e3a5f;color:white;border:none;border-radius:6px;font-weight:600;font-size:13px}.btn:hover{background:#162036}.btn-secondary{background:white;color:#1e3a5f;border:1px solid #1e3a5f}.btn-secondary:hover{background:#f1f5f9}@media print{body{background:white}.actions{display:none}.report-container{box-shadow:none}}</style></head><body><div class="report-container"><div class="header"><div class="header-left"><h1>${title}</h1><div class="subtitle">${subtitle}</div></div><div class="header-right"><div class="org">Epworth Family Resources</div><div class="date">Generated ${new Date().toLocaleDateString()}</div></div></div><div class="content-area">${metaHtml ? `<div class="meta-block">${metaHtml}</div>` : ""}${sectionsHtml}<div class="footer"><div class="confidential">CONFIDENTIAL — FOR INTERNAL USE ONLY</div><div>Epworth Family Resources</div></div></div><div class="actions"><button class="btn" onclick="window.print()">Print Report</button><button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.querySelector('.content-area').innerText).then(()=>alert('Copied!'))">Copy Text</button></div></div><scr` + `ipt>window.onload=function(){setTimeout(function(){try{window.print()}catch(e){}},800)};</scr` + `ipt></body></html>`);
+          printWindow.document.close();
+        };
+
+        const adminTabs = [
+          { key: "overview", label: "Overview", icon: "LayoutDashboard" },
+          { key: "clients", label: "Clients & Workers", icon: "Users" },
+          { key: "data", label: "Data & Reports", icon: "BarChart3" },
+        ];
+
         return (
           <div className="w-full space-y-6 mb-20">
             {/* Header */}
@@ -8784,12 +10371,387 @@ import UserManagement from './components/UserManagement';
               <p className="text-gray-500 text-sm">Manage workers, parse case notes with AI, and edit client profiles.</p>
             </div>
 
+            {/* Sub-Tab Bar */}
+            <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden w-fit">
+              {adminTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setAdminSubTab(tab.key)}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                    adminSubTab === tab.key
+                      ? "bg-[var(--brand-navy)] text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <LucideIcon name={tab.icon} className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ===== OVERVIEW TAB ===== */}
+            {adminSubTab === "overview" && (<>
+
+            {/* Quick Actions */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("quickActions")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("quickActions") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Zap" className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-lg font-bold text-gray-800">Quick Actions</h3>
+                </div>
+              </button>
+              {isSectionExpanded("quickActions") && (
+                <div className="border-t border-gray-200 p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Button
+                  variant="secondary"
+                  iconName="Plus"
+                  onClick={() => {
+                    resetForNewEntry();
+                    setActiveTab("form");
+                  }}
+                  className="justify-start"
+                >
+                  New Case Note Entry
+                </Button>
+                <Button
+                  variant="secondary"
+                  iconName="Target"
+                  onClick={() => {
+                    resetForNewProfile();
+                    setActiveTab("goals");
+                  }}
+                  className="justify-start"
+                >
+                  New Client Profile
+                </Button>
+                <Button
+                  variant="secondary"
+                  iconName="Table"
+                  onClick={() => setActiveTab("table")}
+                  className="justify-start"
+                >
+                  View History
+                </Button>
+                <Button
+                  variant="secondary"
+                  iconName="Download"
+                  onClick={exportEntriesToCsv}
+                  className="justify-start"
+                >
+                  Export Entries CSV
+                </Button>
+              </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI Case Note Parser */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("aiParser")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("aiParser") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Sparkles" className="w-5 h-5 text-purple-600" />
+                  <h3 className="text-lg font-bold text-gray-800">AI Case Note Parser</h3>
+                </div>
+              </button>
+              {isSectionExpanded("aiParser") && (
+                <div className="border-t border-gray-200 p-6">
+              <p className="text-sm text-gray-600 mb-3">
+                Paste rough notes, voice transcription, or any messy text. AI will detect the service type and fill appropriate fields.
+              </p>
+              <textarea
+                value={aiCaseNoteText}
+                onChange={(e) => setAiCaseNoteText(e.target.value)}
+                rows={5}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
+                placeholder="Example: IHFS visit with Smith family on Dec 15 at 2pm, worked on communication goals, made moderate progress..."
+              />
+              {aiParseError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2" role="alert">
+                  <LucideIcon name="AlertCircle" className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-red-700">{aiParseError}</p>
+                    <button
+                      type="button"
+                      className="text-xs text-red-600 hover:text-red-800 underline mt-1"
+                      onClick={() => setAiParseError("")}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setAiCaseNoteText("");
+                    setAiParseError("");
+                  }}
+                  disabled={parsingCaseNote || !aiCaseNoteText}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  iconName="Sparkles"
+                  onClick={async () => {
+                    await applyCaseNoteParse();
+                    setActiveTab("form");
+                  }}
+                  disabled={parsingCaseNote || !aiCaseNoteText}
+                >
+                  {parsingCaseNote ? "Parsing..." : "Parse & Go to Entry"}
+                </Button>
+              </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI Case Analysis */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("caseAnalysis")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("caseAnalysis") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Brain" className="w-5 h-5 text-indigo-600" />
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">AI Case Analysis</h3>
+                    <p className="text-sm text-gray-500">Deep analysis of a case — concerns, patterns, communications, and testing</p>
+                  </div>
+                </div>
+              </button>
+              {isSectionExpanded("caseAnalysis") && (
+                <div className="border-t border-gray-200 p-6 space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Select a family to run a thorough AI analysis across all case data — visit notes, phone calls, texts, emails, drug testing results, safety concerns, and more.
+                  </p>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Family</label>
+                    <select
+                      value={caseAnalysisFamily}
+                      onChange={(e) => setCaseAnalysisFamily(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    >
+                      <option value="">— Choose a family —</option>
+                      {familyDirectoryOptions.filter(o => !o.isArchived).map(o => (
+                        <option key={o.key} value={o.key}>{o.caseName}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="primary"
+                      iconName="Brain"
+                      disabled={caseAnalysisLoading || !caseAnalysisFamily}
+                      onClick={async () => {
+                        setCaseAnalysisLoading(true);
+                        setCaseAnalysisResult("");
+
+                        const truncate = (text, max = 500) => {
+                          const s = String(text || "").trim();
+                          return s.length > max ? s.slice(0, max) + "..." : s;
+                        };
+
+                        const familyOpt = familyDirectoryOptions.find(f => f.key === caseAnalysisFamily);
+                        const familyEntries = entries.filter(e => !e.is_archived && entryMatchesClient(e, caseAnalysisFamily));
+
+                        // Build rich data including all contact types
+                        const visitData = familyEntries.slice(0, 40).map(e => {
+                          const base = {
+                            date: e.date,
+                            serviceType: e.service_type,
+                            contactType: e.contact_type,
+                            worker: e.worker_name,
+                            narrative: truncate(e.visit_narrative, 500),
+                            interventions: truncate(e.interventions, 300),
+                            plan: truncate(e.plan, 300),
+                            interactions: truncate(e.interactions, 300),
+                            parentingSkills: truncate(e.parenting_skills, 300),
+                            goalsProgress: truncate(e.goals_progress, 300),
+                            safetyConcern: e.safety_concern_present,
+                            safetyConcernDesc: truncate(e.safety_concern_description, 300),
+                            participants: e.participants || "",
+                          };
+                          // Drug testing
+                          if (e.chain_of_custody) base.chainOfCustody = e.chain_of_custody;
+                          if (e.test_result) base.testResult = e.test_result;
+                          if (e.sp_test_result) base.sweatPatchResult = e.sp_test_result;
+                          if (e.drugs_tested_positive) base.drugsTestedPositive = e.drugs_tested_positive;
+                          if (e.sp_drugs_tested_positive) base.spDrugsTestedPositive = e.sp_drugs_tested_positive;
+                          if (e.client_admitted_use) base.clientAdmittedUse = e.client_admitted_use;
+                          if (e.sp_client_admitted_use) base.spClientAdmittedUse = e.sp_client_admitted_use;
+                          if (e.non_admission_explanation) base.nonAdmissionExplanation = truncate(e.non_admission_explanation, 300);
+                          if (e.sp_non_admission_explanation) base.spNonAdmissionExplanation = truncate(e.sp_non_admission_explanation, 300);
+                          if (e.refusal_reason) base.refusalReason = truncate(e.refusal_reason, 300);
+                          if (e.sp_tampered_explanation) base.tamperedExplanation = truncate(e.sp_tampered_explanation, 300);
+                          if (e.patch_removed) base.patchRemoved = e.patch_removed;
+                          if (e.new_patch_applied) base.newPatchApplied = e.new_patch_applied;
+                          if (e.test_mailed) base.testMailed = e.test_mailed;
+                          if (e.sp_date_sent) base.dateSent = e.sp_date_sent;
+                          // Cancellation
+                          if (e.cancellation_notification) base.cancellationNotification = truncate(e.cancellation_notification, 300);
+                          if (e.cancellation_pre_call) base.cancellationPreCall = truncate(e.cancellation_pre_call, 300);
+                          if (e.cancellation_en_route) base.cancellationEnRoute = e.cancellation_en_route;
+                          if (e.cancellation_will_makeup) base.willMakeup = e.cancellation_will_makeup;
+                          if (e.cancellation_makeup_date) base.makeupDate = e.cancellation_makeup_date;
+                          // Engagement
+                          if (e.client_admission) base.clientAdmission = truncate(e.client_admission, 300);
+                          if (e.engagement) base.engagement = truncate(e.engagement, 300);
+                          return base;
+                        });
+
+                        // Separate entries by communication type for clarity in the prompt
+                        const phoneEntries = visitData.filter(e => e.contactType === "Phone Call");
+                        const textEntries = visitData.filter(e => e.contactType === "Text Message");
+                        const visitEntries = visitData.filter(e => e.contactType === "Face-to-Face Visit" || e.contactType === "Monitored Visit" || e.contactType === "Virtual Visit");
+                        const cancelledEntries = visitData.filter(e => (e.contactType || "").includes("Cancelled") || (e.contactType || "").includes("No Show"));
+                        const drugTestEntries = visitData.filter(e => (e.serviceType || "").startsWith("DST"));
+                        const otherEntries = visitData.filter(e => !phoneEntries.includes(e) && !textEntries.includes(e) && !visitEntries.includes(e) && !cancelledEntries.includes(e) && !drugTestEntries.includes(e));
+
+                        // Build family profile info
+                        const profile = familyOpt?.raw || {};
+                        const profileInfo = {
+                          caseName: familyOpt?.caseName || "",
+                          mcNumber: familyOpt?.mcNumber || "",
+                          parents: [profile.Parent_1, profile.Parent_2, profile.Parent_3].filter(Boolean),
+                          children: [profile.Child_1, profile.Child_2, profile.Child_3, profile.Child_4, profile.Child_5].filter(Boolean),
+                          goals: familyOpt?.goals || [],
+                          serviceStartDate: profile.Service_Start_Date || "",
+                          povertyLevel: profile.Poverty_Level || "",
+                          householdType: profile.Household_Type || "",
+                        };
+
+                        // Authorization history
+                        const authHistory = Array.isArray(profile.Authorization_History) ? profile.Authorization_History : [];
+
+                        const totalNote = familyEntries.length > 40 ? `\n\nNote: Showing 40 of ${familyEntries.length} total entries.` : "";
+
+                        const prompt = `Run a thorough case analysis for this family. This is for an admin/supervisor review — be detailed, honest, and flag anything that needs attention.${totalNote}\n\nFAMILY PROFILE:\n${JSON.stringify(profileInfo)}\n\nAUTHORIZATION HISTORY:\n${JSON.stringify(authHistory)}\n\nIN-PERSON & VIRTUAL VISITS (${visitEntries.length}):\n${JSON.stringify(visitEntries)}\n\nPHONE CALLS (${phoneEntries.length}):\n${JSON.stringify(phoneEntries)}\n\nTEXT MESSAGES (${textEntries.length}):\n${JSON.stringify(textEntries)}\n\nDRUG TESTING (${drugTestEntries.length}):\n${JSON.stringify(drugTestEntries)}\n\nCANCELLATIONS & NO-SHOWS (${cancelledEntries.length}):\n${JSON.stringify(cancelledEntries)}\n\n${otherEntries.length > 0 ? `OTHER CONTACTS (${otherEntries.length}):\n${JSON.stringify(otherEntries)}\n\n` : ""}Analyze ALL of the above data. Use ALL CAPS for section headers. Cover:\n\nCASE OVERVIEW\n- Family composition, services, workers, how long services have been active\n\nCOMMUNICATIONS ANALYSIS\n- What do the phone calls, texts, and emails reveal? Patterns in communication — is the family responsive? Initiating contact? Avoiding it?\n- Notable things said or documented in phone/text contacts\n- Any red flags or positive indicators from communications\n\nVISIT OBSERVATIONS\n- Key themes across in-person and virtual visits\n- What are workers observing in the home? What interactions are documented?\n- Parenting skills observed, engagement level during visits\n\nDRUG TESTING SUMMARY\n- Chronological summary of all test results with dates, types, and outcomes\n- Patterns — are results consistent? Trending in a direction?\n- Refusals, tampering, or admissions documented\n- If no drug testing data exists, note that\n\nSAFETY CONCERNS\n- Every safety concern documented, with dates and how it was addressed\n- Patterns — recurring issues, escalation, or improvement\n- Protective factors vs risk factors\n\nCANCELLATION & ENGAGEMENT PATTERNS\n- How often are visits being cancelled? By whom?\n- No-shows, makeups, patterns (certain days, after certain events)\n- Overall engagement trajectory — getting better or worse?\n\nGOAL PROGRESS\n- Status of each goal\n- What's being worked on, what's stalled\n- Connection between goals and actual visit activities\n\nCONCERNS & RED FLAGS\n- Anything that stands out as concerning — be direct\n- Things that don't add up or need a closer look\n- Compliance issues, engagement drops, safety patterns\n\nSTRENGTHS & POSITIVE INDICATORS\n- What's going well? What does this family do right?\n- Progress that should be recognized\n\nRECOMMENDATIONS\n- What should the team focus on next?\n- Service adjustments, safety planning, goal changes\n- Anything that needs immediate attention\n\nBe specific — cite dates, quotes from narratives, actual test results. This is a supervisor-level review.`;
+
+                        try {
+                          const response = await authFetch("/api/generateReport", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ prompt }),
+                          });
+                          const result = await response.json().catch(() => ({}));
+                          if (!response.ok || result?.error) throw new Error(result?.error || `API error: ${response.status}`);
+                          setCaseAnalysisResult(result?.text || "Unable to generate analysis.");
+                        } catch (err) {
+                          showToast("Failed to generate case analysis: " + (err?.message || "Unknown error"));
+                        } finally {
+                          setCaseAnalysisLoading(false);
+                        }
+                      }}
+                    >
+                      {caseAnalysisLoading ? "Analyzing..." : "Run Case Analysis"}
+                    </Button>
+                  </div>
+
+                  {caseAnalysisResult && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-gray-700">Analysis Results</h4>
+                        <div className="flex gap-2">
+                          <Button variant="secondary" iconName="Copy" onClick={() => { navigator.clipboard.writeText(caseAnalysisResult); showToast("Copied!"); }}>
+                            Copy
+                          </Button>
+                          <Button variant="secondary" iconName="Printer" onClick={() => {
+                            const adminFamilyProfile = familyDirectoryOptions.find(f => f.key === caseAnalysisFamily);
+                            const familyName = adminFamilyProfile?.caseName || caseAnalysisFamily;
+                            openAdminBrandedReport({
+                              title: "AI Case Analysis",
+                              subtitle: familyName,
+                              metaLines: [
+                                `Family: ${familyName}`,
+                                `Generated: ${new Date().toLocaleDateString()}`,
+                                `Total Entries Analyzed: ${entries.filter(e => !e.is_archived && entryMatchesClient(e, caseAnalysisFamily)).length}`,
+                              ],
+                              text: caseAnalysisResult,
+                              fileName: buildReportFileName({
+                                familyName: adminFamilyProfile?.caseName || "",
+                                mcNumber: adminFamilyProfile?.mcNumber || "",
+                                serviceTypes: "",
+                                month: new Date().toLocaleString("en-US", { month: "long" }),
+                                year: String(new Date().getFullYear()),
+                                reportType: "AI Case Analysis",
+                              }),
+                            });
+                          }}>
+                            Print
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4 max-h-[600px] overflow-y-auto">
+                        <div className="prose prose-sm max-w-none text-gray-700">
+                          {caseAnalysisResult.split("\n").map((line, i) => {
+                            const trimmed = line.trim();
+                            const clean = trimmed.replace(/\*\*\*(.*?)\*\*\*/g, "$1").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+                            const isHeader = clean.length > 2 && clean === clean.toUpperCase() && /[A-Z]{3,}/.test(clean) && !/^\d+\.$/.test(clean);
+                            const numMatch = clean.match(/^\d+\.\s+([A-Z][A-Z\s&—\-:]+)$/);
+                            if (isHeader || numMatch) {
+                              return <div key={i} className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wide mt-4 mb-1 pb-1 border-b border-gray-200">{numMatch ? numMatch[1] : clean}</div>;
+                            }
+                            if (!clean) return <div key={i} className="h-2" />;
+                            return <div key={i} className="text-sm text-gray-700 leading-relaxed">{clean}</div>;
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Monthly Reports Quick Link */}
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl shadow-lg border border-blue-200 overflow-hidden">
+              <button onClick={() => toggleSection("reportsLink")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-blue-100/50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("reportsLink") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-blue-500" />
+                  <LucideIcon name="FileText" className="w-8 h-8 text-blue-600" />
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">Monthly Summary Reports</h3>
+                    <p className="text-sm text-gray-600">Create professional monthly reports matching your Word templates</p>
+                  </div>
+                </div>
+              </button>
+              {isSectionExpanded("reportsLink") && (
+                <div className="border-t border-blue-200 p-6">
+                  <Button
+                    variant="primary"
+                    iconName="ArrowRight"
+                    onClick={() => setActiveTab("reports")}
+                  >
+                    Go to Reports
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            </>)}
+
+            {/* ===== CLIENTS & WORKERS TAB ===== */}
+            {adminSubTab === "clients" && (<>
+
             {/* Worker Management */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <LucideIcon name="Users" className="w-5 h-5 mr-2 text-[var(--brand-navy)]" />
-                Workers ({WORKER_NAMES.length})
-              </h3>
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("workers")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("workers") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Users" className="w-5 h-5 text-[var(--brand-navy)]" />
+                  <h3 className="text-lg font-bold text-gray-800">Workers</h3>
+                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">{WORKER_NAMES.length}</span>
+                </div>
+              </button>
+              {isSectionExpanded("workers") && (
+                <div className="border-t border-gray-200 p-6">
               <div className="flex gap-2 mb-4">
                 <input
                   type="text"
@@ -8842,69 +10804,23 @@ import UserManagement from './components/UserManagement';
                 ))}
               </div>
               <p className="text-xs text-gray-500 mt-3">Workers are saved to your browser and appear in the Worker Name dropdown.</p>
-            </div>
-
-            {/* AI Case Note Parser */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <LucideIcon name="Sparkles" className="w-5 h-5 mr-2 text-purple-600" />
-                AI Case Note Parser
-              </h3>
-              <p className="text-sm text-gray-600 mb-3">
-                Paste rough notes, voice transcription, or any messy text. AI will detect the service type and fill appropriate fields.
-              </p>
-              <textarea
-                value={aiCaseNoteText}
-                onChange={(e) => setAiCaseNoteText(e.target.value)}
-                rows={5}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm"
-                placeholder="Example: IHFS visit with Smith family on Dec 15 at 2pm, worked on communication goals, made moderate progress..."
-              />
-              {/* AI Parse Error Display */}
-              {aiParseError && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2" role="alert">
-                  <LucideIcon name="AlertCircle" className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm text-red-700">{aiParseError}</p>
-                    <button
-                      type="button"
-                      className="text-xs text-red-600 hover:text-red-800 underline mt-1"
-                      onClick={() => setAiParseError("")}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
                 </div>
               )}
-              <div className="mt-3 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setAiCaseNoteText("");
-                    setAiParseError("");
-                  }}
-                  disabled={parsingCaseNote || !aiCaseNoteText}
-                >
-                  Clear
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  iconName="Sparkles"
-                  onClick={async () => {
-                    await applyCaseNoteParse();
-                    setActiveTab("form");
-                  }}
-                  disabled={parsingCaseNote || !aiCaseNoteText}
-                >
-                  {parsingCaseNote ? "Parsing..." : "Parse & Go to Entry"}
-                </Button>
-              </div>
             </div>
 
-            {/* Client Profiles List - Full Width Modern Table */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+            {/* Client Profiles */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("profiles")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("profiles") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Users" className="w-5 h-5 text-[var(--brand-navy)]" />
+                  <h3 className="text-lg font-bold text-gray-800">Client Profiles</h3>
+                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">{familyDirectoryOptions.length} profiles</span>
+                </div>
+              </button>
+              {isSectionExpanded("profiles") && (
+                <div className="border-t border-gray-200">
+            <div className="bg-white rounded-2xl overflow-hidden">
               {/* Header */}
               <div className="bg-gradient-to-r from-[var(--brand-navy)] to-[#2a3a5c] px-8 py-5">
                 <div className="flex items-center justify-between">
@@ -8938,7 +10854,7 @@ import UserManagement from './components/UserManagement';
                     <LucideIcon name="Edit2" className="w-5 h-5 text-blue-600" />
                     <h4 className="font-bold text-blue-800">Editing Profile</h4>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <input
                       type="text"
                       placeholder="Case Name"
@@ -8968,7 +10884,7 @@ import UserManagement from './components/UserManagement';
                       className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--brand-navy)] focus:border-[var(--brand-navy)]"
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                     <input
                       type="text"
                       placeholder="Parent 1"
@@ -9164,61 +11080,26 @@ import UserManagement from './components/UserManagement';
                 )}
               </div>
             </div>
-
-            {/* Quick Actions */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <LucideIcon name="Zap" className="w-5 h-5 mr-2 text-amber-500" />
-                Quick Actions
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Button
-                  variant="secondary"
-                  iconName="Plus"
-                  onClick={() => {
-                    resetForNewEntry();
-                    setActiveTab("form");
-                  }}
-                  className="justify-start"
-                >
-                  New Case Note Entry
-                </Button>
-                <Button
-                  variant="secondary"
-                  iconName="Target"
-                  onClick={() => {
-                    resetForNewProfile();
-                    setActiveTab("goals");
-                  }}
-                  className="justify-start"
-                >
-                  New Client Profile
-                </Button>
-                <Button
-                  variant="secondary"
-                  iconName="Table"
-                  onClick={() => setActiveTab("table")}
-                  className="justify-start"
-                >
-                  View History
-                </Button>
-                <Button
-                  variant="secondary"
-                  iconName="Download"
-                  onClick={exportEntriesToCsv}
-                  className="justify-start"
-                >
-                  Export Entries CSV
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
 
-            {/* Data Management - Export/Import */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <LucideIcon name="Database" className="w-5 h-5 mr-2 text-green-600" />
-                Data Management
-              </h3>
+            </>)}
+
+            {/* ===== DATA & REPORTS TAB ===== */}
+            {adminSubTab === "data" && (<>
+
+            {/* Data Management */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("dataManagement")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("dataManagement") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="Database" className="w-5 h-5 text-green-600" />
+                  <h3 className="text-lg font-bold text-gray-800">Data Management</h3>
+                </div>
+              </button>
+              {isSectionExpanded("dataManagement") && (
+                <div className="border-t border-gray-200 p-6">
               <p className="text-sm text-gray-600 mb-4">
                 Export all your data (entries + profiles) as JSON for backup or migration to another Firestore project.
               </p>
@@ -9354,14 +11235,21 @@ import UserManagement from './components/UserManagement';
               <div className="text-xs text-gray-500">
                 <strong>Firestore Path:</strong> artifacts/{appId}/contract_entries & case_directory
               </div>
+                </div>
+              )}
             </div>
 
-            {/* Reports & Analytics Panel */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <LucideIcon name="BarChart3" className="w-5 h-5 mr-2 text-purple-600" />
-                Reports & Analytics
-              </h3>
+            {/* Reports & Analytics */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              <button onClick={() => toggleSection("reports")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <LucideIcon name={isSectionExpanded("reports") ? "ChevronDown" : "ChevronRight"} className="w-5 h-5 text-gray-500" />
+                  <LucideIcon name="BarChart3" className="w-5 h-5 text-purple-600" />
+                  <h3 className="text-lg font-bold text-gray-800">Reports & Analytics</h3>
+                </div>
+              </button>
+              {isSectionExpanded("reports") && (
+                <div className="border-t border-gray-200 p-6">
 
               {(() => {
                 // Filter entries for selected month
@@ -9402,16 +11290,41 @@ import UserManagement from './components/UserManagement';
                     }
                   });
 
+                  // Count children by gender AND age range
+                  let femaleChildren0to5 = 0, femaleChildren6to12 = 0, femaleChildren13to19 = 0;
+                  let maleChildren0to5 = 0, maleChildren6to12 = 0, maleChildren13to19 = 0;
+                  let hasChildUnder5 = false;
+                  [1, 2, 3, 4, 5, 6, 7].forEach((n) => {
+                    const name = String(raw[`Child_${n}`] || "").trim();
+                    const gender = String(raw[`Child_${n}_Gender`] || "").trim();
+                    let ageRange = migrateAgeRange(raw[`Child_${n}_Age_Range`]);
+                    if (name) {
+                      if (ageRange === "0-5") hasChildUnder5 = true;
+                      if (gender === "Female") {
+                        if (ageRange === "0-5") femaleChildren0to5++;
+                        else if (ageRange === "6-12") femaleChildren6to12++;
+                        else if (ageRange === "13-19") femaleChildren13to19++;
+                      } else if (gender === "Male") {
+                        if (ageRange === "0-5") maleChildren0to5++;
+                        else if (ageRange === "6-12") maleChildren6to12++;
+                        else if (ageRange === "13-19") maleChildren13to19++;
+                      }
+                    }
+                  });
+
                   // Count adults by gender
                   let maleAdults = 0, femaleAdults = 0, adultsOther = 0, adultsUnknown = 0;
+                  let hasMomOrFemaleParent = false;
                   [1, 2, 3].forEach((n) => {
                     const name = String(raw[`Parent_${n}`] || "").trim();
                     const gender = String(raw[`Parent_${n}_Gender`] || "").trim();
+                    const relationship = String(raw[`Parent_${n}_Relationship`] || "").trim();
                     if (name) {
                       if (gender === "Male") maleAdults++;
                       else if (gender === "Female") femaleAdults++;
                       else if (gender === "Other") adultsOther++;
                       else adultsUnknown++;
+                      if (relationship === "Mother" || gender === "Female") hasMomOrFemaleParent = true;
                     }
                   });
 
@@ -9419,6 +11332,8 @@ import UserManagement from './components/UserManagement';
                   const adults = maleAdults + femaleAdults + adultsOther + adultsUnknown;
 
                   const povertyLevel = String(raw.Poverty_Level || "").trim();
+                  const householdType = String(raw.Household_Type || "").trim();
+                  const isMomWithChildUnder5 = hasMomOrFemaleParent && hasChildUnder5;
 
                   clientStats[profile.key] = {
                     caseName: profile.caseName,
@@ -9434,6 +11349,14 @@ import UserManagement from './components/UserManagement';
                     adultsOther,
                     adultsUnknown,
                     povertyLevel,
+                    householdType,
+                    femaleChildren0to5,
+                    femaleChildren6to12,
+                    femaleChildren13to19,
+                    maleChildren0to5,
+                    maleChildren6to12,
+                    maleChildren13to19,
+                    isMomWithChildUnder5,
                     completedContacts: 0,
                     cancelledVisits: 0,
                     cancelledByParent: 0,
@@ -9465,7 +11388,7 @@ import UserManagement from './components/UserManagement';
                   const contactType = entry.contact_type || "";
                   const isCancelledByParent = contactType === "Cancelled by Parent";
                   const isCancelledByWorker = contactType === "Cancelled by Worker";
-                  const isCancelled = isCancelledByParent || isCancelledByWorker || contactType === "Cancelled In Route";
+                  const isCancelled = isCancelledByParent || isCancelledByWorker || ["Cancelled for Weather", "Cancelled by Team", "Cancelled No Confirmation", "Cancelled In Route"].includes(contactType);
                   const isRemote = ["Phone Call", "Text Message"].includes(contactType);
 
                   if (!stat.byService[serviceType]) {
@@ -9539,6 +11462,24 @@ import UserManagement from './components/UserManagement';
                   const totalUsed = s.unitsUsedHours + s.unitsUsedTests;
                   return totalUsed > s.authorizedUnits;
                 });
+
+                // Demographic breakdown totals
+                const totalFemaleChildren0to5 = statsArray.reduce((sum, [_, s]) => sum + s.femaleChildren0to5, 0);
+                const totalFemaleChildren6to12 = statsArray.reduce((sum, [_, s]) => sum + s.femaleChildren6to12, 0);
+                const totalFemaleChildren13to19 = statsArray.reduce((sum, [_, s]) => sum + s.femaleChildren13to19, 0);
+                const totalMaleChildren0to5 = statsArray.reduce((sum, [_, s]) => sum + s.maleChildren0to5, 0);
+                const totalMaleChildren6to12 = statsArray.reduce((sum, [_, s]) => sum + s.maleChildren6to12, 0);
+                const totalMaleChildren13to19 = statsArray.reduce((sum, [_, s]) => sum + s.maleChildren13to19, 0);
+                const totalMomsWithChildrenUnder5 = statsArray.filter(([_, s]) => s.isMomWithChildUnder5).length;
+                const totalWomen19Plus = totalFemaleAdults;
+                const totalSingleMotherHoH = statsArray.filter(([_, s]) => s.householdType === "Single Mother").length;
+                const totalSingleFatherHoH = statsArray.filter(([_, s]) => s.householdType === "Single Father").length;
+                const childrenBelowPoverty = statsArray
+                  .filter(([_, s]) => s.povertyLevel === "Below Poverty Level")
+                  .reduce((sum, [_, s]) => sum + s.children, 0);
+                const adultsBelowPoverty = statsArray
+                  .filter(([_, s]) => s.povertyLevel === "Below Poverty Level")
+                  .reduce((sum, [_, s]) => sum + s.adults, 0);
 
                 const monthNames = ["January", "February", "March", "April", "May", "June",
                   "July", "August", "September", "October", "November", "December"];
@@ -9617,12 +11558,60 @@ import UserManagement from './components/UserManagement';
                           <div className="text-xs text-fuchsia-600">Female Adults</div>
                         </div>
                       </div>
+                      {/* Children by Age & Gender */}
+                      <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 mt-3">Children by Age & Gender</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                        <div className="bg-pink-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-pink-700">{totalFemaleChildren0to5}</div>
+                          <div className="text-xs text-pink-600">Girls 0-5</div>
+                        </div>
+                        <div className="bg-pink-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-pink-700">{totalFemaleChildren6to12}</div>
+                          <div className="text-xs text-pink-600">Girls 6-12</div>
+                        </div>
+                        <div className="bg-pink-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-pink-700">{totalFemaleChildren13to19}</div>
+                          <div className="text-xs text-pink-600">Girls 13-19</div>
+                        </div>
+                        <div className="bg-cyan-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-cyan-700">{totalMaleChildren0to5}</div>
+                          <div className="text-xs text-cyan-600">Boys 0-5</div>
+                        </div>
+                        <div className="bg-cyan-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-cyan-700">{totalMaleChildren6to12}</div>
+                          <div className="text-xs text-cyan-600">Boys 6-12</div>
+                        </div>
+                        <div className="bg-cyan-50 rounded-lg p-2 text-center">
+                          <div className="text-xl font-bold text-cyan-700">{totalMaleChildren13to19}</div>
+                          <div className="text-xs text-cyan-600">Boys 13-19</div>
+                        </div>
+                      </div>
+                      {/* Household & Adults */}
+                      <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Household & Adults</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                        <div className="bg-purple-50 rounded-lg p-2 text-center border border-purple-200">
+                          <div className="text-xl font-bold text-purple-700">{totalMomsWithChildrenUnder5}</div>
+                          <div className="text-xs text-purple-600">Moms w/ Children Under 5</div>
+                        </div>
+                        <div className="bg-fuchsia-50 rounded-lg p-2 text-center border border-fuchsia-200">
+                          <div className="text-xl font-bold text-fuchsia-700">{totalWomen19Plus}</div>
+                          <div className="text-xs text-fuchsia-600">Women 19+</div>
+                        </div>
+                        <div className="bg-orange-50 rounded-lg p-2 text-center border border-orange-200">
+                          <div className="text-xl font-bold text-orange-700">{totalSingleMotherHoH}</div>
+                          <div className="text-xs text-orange-600">Single Mother HoH</div>
+                        </div>
+                        <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-200">
+                          <div className="text-xl font-bold text-amber-700">{totalSingleFatherHoH}</div>
+                          <div className="text-xs text-amber-600">Single Father HoH</div>
+                        </div>
+                      </div>
                       {/* Poverty Level Stats */}
                       <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Poverty Level</div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                         <div className="bg-red-50 rounded-lg p-2 text-center border border-red-200">
                           <div className="text-xl font-bold text-red-700">{belowPoverty}</div>
-                          <div className="text-xs text-red-600">Below Poverty</div>
+                          <div className="text-xs text-red-600">Families Below Poverty</div>
                         </div>
                         <div className="bg-yellow-50 rounded-lg p-2 text-center border border-yellow-200">
                           <div className="text-xl font-bold text-yellow-700">{atPoverty}</div>
@@ -9631,6 +11620,14 @@ import UserManagement from './components/UserManagement';
                         <div className="bg-green-50 rounded-lg p-2 text-center border border-green-200">
                           <div className="text-xl font-bold text-green-700">{abovePoverty}</div>
                           <div className="text-xs text-green-600">Above Poverty</div>
+                        </div>
+                        <div className="bg-red-50 rounded-lg p-2 text-center border border-red-200">
+                          <div className="text-xl font-bold text-red-700">{childrenBelowPoverty}</div>
+                          <div className="text-xs text-red-600">Children Below Poverty</div>
+                        </div>
+                        <div className="bg-red-50 rounded-lg p-2 text-center border border-red-200">
+                          <div className="text-xl font-bold text-red-700">{adultsBelowPoverty}</div>
+                          <div className="text-xs text-red-600">Adults Below Poverty</div>
                         </div>
                       </div>
                     </div>
@@ -9842,7 +11839,7 @@ import UserManagement from './components/UserManagement';
                         iconName="Download"
                         onClick={() => {
                           const rows = [
-                            ["Client", "MC Number", "Boys", "Girls", "Total Children", "Male Adults", "Female Adults", "Total Adults", "Poverty Level", "Completed Visits", "Cancelled by Parent", "Cancelled by Worker", "Total Cancelled", "Hours Used", "Authorized Units", "Units Period", "Units Used (Hrs)", "Units Used (Tests)", "Units Remaining", "Month", "Year"].join(","),
+                            ["Client", "MC Number", "Boys", "Girls", "Total Children", "Male Adults", "Female Adults", "Total Adults", "Poverty Level", "Household Type", "Girls 0-5", "Girls 6-12", "Girls 13-19", "Boys 0-5", "Boys 6-12", "Boys 13-19", "Completed Visits", "Cancelled by Parent", "Cancelled by Worker", "Total Cancelled", "Hours Used", "Authorized Units", "Units Period", "Units Used (Hrs)", "Units Used (Tests)", "Units Remaining", "Month", "Year"].join(","),
                             ...statsArray
                               .filter(([_, s]) => s.completedContacts > 0 || s.cancelledVisits > 0 || s.children > 0 || reportFamilyFilter)
                               .map(([_, s]) => {
@@ -9858,6 +11855,13 @@ import UserManagement from './components/UserManagement';
                                   s.femaleAdults,
                                   s.adults,
                                   `"${s.povertyLevel || ""}"`,
+                                  `"${s.householdType || ""}"`,
+                                  s.femaleChildren0to5,
+                                  s.femaleChildren6to12,
+                                  s.femaleChildren13to19,
+                                  s.maleChildren0to5,
+                                  s.maleChildren6to12,
+                                  s.maleChildren13to19,
                                   s.completedContacts,
                                   s.cancelledByParent,
                                   s.cancelledByWorker,
@@ -9928,11 +11932,23 @@ import UserManagement from './components/UserManagement';
                                 femaleAdults: totalFemaleAdults,
                                 totalAdults: totalAdults,
                                 totalPeople: totalChildren + totalAdults,
+                                femaleChildren0to5: totalFemaleChildren0to5,
+                                femaleChildren6to12: totalFemaleChildren6to12,
+                                femaleChildren13to19: totalFemaleChildren13to19,
+                                maleChildren0to5: totalMaleChildren0to5,
+                                maleChildren6to12: totalMaleChildren6to12,
+                                maleChildren13to19: totalMaleChildren13to19,
+                                momsWithChildrenUnder5: totalMomsWithChildrenUnder5,
+                                women19Plus: totalWomen19Plus,
+                                singleMotherHoH: totalSingleMotherHoH,
+                                singleFatherHoH: totalSingleFatherHoH,
                               },
                               povertyLevels: {
                                 belowPoverty,
                                 atPoverty,
                                 abovePoverty,
+                                childrenBelowPoverty,
+                                adultsBelowPoverty,
                               },
                               activity: {
                                 completedVisits: totalCompleted,
@@ -9998,84 +12014,184 @@ import UserManagement from './components/UserManagement';
                             };
 
                             try {
-                              const response = await fetch("/api/generateReport", {
+                              const response = await authFetch("/api/generateReport", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ prompt }),
                               });
 
-                              if (!response.ok) {
-                                throw new Error(`API error: ${response.status}`);
-                              }
-
-                              const result = await response.json();
-                              if (result?.error) {
-                                throw new Error(result.error);
+                              const result = await response.json().catch(() => ({}));
+                              if (!response.ok || result?.error) {
+                                throw new Error(result?.error || `API error: ${response.status}`);
                               }
                               const reportText = result?.text || "Unable to generate report. Please try again.";
 
-                              // Build KPI cards HTML from current data
+                              // Build KPI cards HTML from current data — all dashboard sections
+                              const completionRate = totalCompleted + totalCancelled > 0 ? ((totalCompleted / (totalCompleted + totalCancelled)) * 100).toFixed(0) : 0;
                               const kpiCardsHtml = `
+                                <div class="data-section-label">DEMOGRAPHICS</div>
                                 <div class="kpi-grid">
                                   <div class="kpi-card blue">
                                     <div class="kpi-value">${totalClients}</div>
-                                    <div class="kpi-label">Families Served</div>
+                                    <div class="kpi-label">Families</div>
                                   </div>
+                                  <div class="kpi-card blue">
+                                    <div class="kpi-value">${totalBoys}</div>
+                                    <div class="kpi-label">Boys</div>
+                                  </div>
+                                  <div class="kpi-card blue">
+                                    <div class="kpi-value">${totalGirls}</div>
+                                    <div class="kpi-label">Girls</div>
+                                  </div>
+                                  <div class="kpi-card blue">
+                                    <div class="kpi-value">${totalChildren}</div>
+                                    <div class="kpi-label">Total Children</div>
+                                  </div>
+                                  <div class="kpi-card blue">
+                                    <div class="kpi-value">${totalMaleAdults}</div>
+                                    <div class="kpi-label">Male Adults</div>
+                                  </div>
+                                  <div class="kpi-card blue">
+                                    <div class="kpi-value">${totalFemaleAdults}</div>
+                                    <div class="kpi-label">Female Adults</div>
+                                  </div>
+                                </div>
+
+                                <div class="data-section-label">CHILDREN BY AGE & GENDER</div>
+                                <div class="kpi-grid">
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalFemaleChildren0to5}</span>
+                                    <span class="kpi-sm-label">Girls 0-5</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalFemaleChildren6to12}</span>
+                                    <span class="kpi-sm-label">Girls 6-12</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalFemaleChildren13to19}</span>
+                                    <span class="kpi-sm-label">Girls 13-19</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalMaleChildren0to5}</span>
+                                    <span class="kpi-sm-label">Boys 0-5</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalMaleChildren6to12}</span>
+                                    <span class="kpi-sm-label">Boys 6-12</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalMaleChildren13to19}</span>
+                                    <span class="kpi-sm-label">Boys 13-19</span>
+                                  </div>
+                                </div>
+
+                                <div class="data-section-label">HOUSEHOLD & ADULTS</div>
+                                <div class="kpi-grid small-4">
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalMomsWithChildrenUnder5}</span>
+                                    <span class="kpi-sm-label">Moms w/ Children Under 5</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalWomen19Plus}</span>
+                                    <span class="kpi-sm-label">Women 19+</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalSingleMotherHoH}</span>
+                                    <span class="kpi-sm-label">Single Mother HoH</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalSingleFatherHoH}</span>
+                                    <span class="kpi-sm-label">Single Father HoH</span>
+                                  </div>
+                                </div>
+
+                                <div class="data-section-label">POVERTY LEVEL</div>
+                                <div class="kpi-grid small-5">
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${belowPoverty}</span>
+                                    <span class="kpi-sm-label">Families Below Poverty</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${atPoverty}</span>
+                                    <span class="kpi-sm-label">At Poverty</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${abovePoverty}</span>
+                                    <span class="kpi-sm-label">Above Poverty</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${childrenBelowPoverty}</span>
+                                    <span class="kpi-sm-label">Children Below Poverty</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${adultsBelowPoverty}</span>
+                                    <span class="kpi-sm-label">Adults Below Poverty</span>
+                                  </div>
+                                </div>
+
+                                <div class="data-section-label">ACTIVITY & KPIs (${monthNames[reportMonth].toUpperCase()} ${reportYear})</div>
+                                <div class="kpi-grid">
                                   <div class="kpi-card green">
                                     <div class="kpi-value">${totalCompleted}</div>
                                     <div class="kpi-label">Completed Visits</div>
                                   </div>
-                                  <div class="kpi-card amber">
-                                    <div class="kpi-value">${totalHours.toFixed(1)}</div>
-                                    <div class="kpi-label">Hours Delivered</div>
-                                  </div>
-                                  <div class="kpi-card purple">
-                                    <div class="kpi-value">${totalCompleted + totalCancelled > 0 ? ((totalCompleted / (totalCompleted + totalCancelled)) * 100).toFixed(0) : 0}%</div>
-                                    <div class="kpi-label">Completion Rate</div>
-                                  </div>
-                                  <div class="kpi-card teal">
-                                    <div class="kpi-value">${totalChildren}</div>
-                                    <div class="kpi-label">Children Served</div>
-                                  </div>
                                   <div class="kpi-card red">
                                     <div class="kpi-value">${totalCancelled}</div>
-                                    <div class="kpi-label">Cancelled</div>
+                                    <div class="kpi-label">Total Cancelled</div>
+                                  </div>
+                                  <div class="kpi-card amber">
+                                    <div class="kpi-value">${totalCancelledByParent}</div>
+                                    <div class="kpi-label">By Parent</div>
+                                  </div>
+                                  <div class="kpi-card amber">
+                                    <div class="kpi-value">${totalCancelledByWorker}</div>
+                                    <div class="kpi-label">By Worker</div>
+                                  </div>
+                                  <div class="kpi-card teal">
+                                    <div class="kpi-value">${totalHours.toFixed(1)}</div>
+                                    <div class="kpi-label">Hours Used</div>
+                                  </div>
+                                  <div class="kpi-card purple">
+                                    <div class="kpi-value">${completionRate}%</div>
+                                    <div class="kpi-label">Completion Rate</div>
                                   </div>
                                 </div>
-                                <div class="kpi-grid small">
-                                  <div class="kpi-card-sm">
-                                    <span class="kpi-sm-value">${totalBoys}</span>
-                                    <span class="kpi-sm-label">Boys</span>
-                                  </div>
-                                  <div class="kpi-card-sm">
-                                    <span class="kpi-sm-value">${totalGirls}</span>
-                                    <span class="kpi-sm-label">Girls</span>
-                                  </div>
-                                  <div class="kpi-card-sm">
-                                    <span class="kpi-sm-value">${totalAdults}</span>
-                                    <span class="kpi-sm-label">Adults</span>
-                                  </div>
-                                  <div class="kpi-card-sm">
-                                    <span class="kpi-sm-value">${belowPoverty}</span>
-                                    <span class="kpi-sm-label">Below Poverty</span>
-                                  </div>
+
+                                <div class="data-section-label">UNITS TRACKING</div>
+                                <div class="kpi-grid small-4">
                                   <div class="kpi-card-sm">
                                     <span class="kpi-sm-value">${totalUnitsUsedHours.toFixed(1)}</span>
-                                    <span class="kpi-sm-label">Units (Hrs)</span>
+                                    <span class="kpi-sm-label">Hours Used</span>
                                   </div>
                                   <div class="kpi-card-sm">
                                     <span class="kpi-sm-value">${totalUnitsUsedTests}</span>
                                     <span class="kpi-sm-label">Drug Tests</span>
                                   </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${totalAuthorizedUnits}</span>
+                                    <span class="kpi-sm-label">Total Authorized</span>
+                                  </div>
+                                  <div class="kpi-card-sm">
+                                    <span class="kpi-sm-value">${familiesOverBudget.length}</span>
+                                    <span class="kpi-sm-label">Over Budget</span>
+                                  </div>
                                 </div>
                               `;
 
                               // Show report in a professional KPI format
+                              const analyticsFileName = buildReportFileName({
+                                familyName: "",
+                                mcNumber: "",
+                                serviceTypes: "",
+                                month: monthNames[reportMonth],
+                                year: String(reportYear),
+                                reportType: reportTitles[aiReportType],
+                              });
                               const reportWindow = window.open("", "_blank", "width=850,height=700");
                               reportWindow.document.write(`
                                 <html>
                                 <head>
-                                  <title>${reportTitles[aiReportType]} - ${monthNames[reportMonth]} ${reportYear}</title>
+                                  <title>${analyticsFileName}</title>
                                   <style>
                                     @page { size: letter; margin: 0.5in; }
                                     * { box-sizing: border-box; }
@@ -10137,6 +12253,25 @@ import UserManagement from './components/UserManagement';
                                     .kpi-grid.small {
                                       grid-template-columns: repeat(6, 1fr);
                                       gap: 8px;
+                                    }
+                                    .kpi-grid.small-4 {
+                                      grid-template-columns: repeat(4, 1fr);
+                                      gap: 8px;
+                                    }
+                                    .kpi-grid.small-5 {
+                                      grid-template-columns: repeat(5, 1fr);
+                                      gap: 8px;
+                                    }
+                                    .data-section-label {
+                                      font-size: 10px;
+                                      font-weight: 700;
+                                      color: #64748b;
+                                      text-transform: uppercase;
+                                      letter-spacing: 1px;
+                                      margin: 16px 0 6px;
+                                    }
+                                    .data-section-label:first-child {
+                                      margin-top: 0;
                                     }
                                     .kpi-card {
                                       padding: 16px;
@@ -10300,27 +12435,12 @@ import UserManagement from './components/UserManagement';
                   </div>
                 );
               })()}
+                </div>
+              )}
             </div>
 
-            {/* Monthly Reports Quick Link */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl shadow-lg border border-blue-200 p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <LucideIcon name="FileText" className="w-8 h-8 text-blue-600 mr-3" />
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800">Monthly Summary Reports</h3>
-                    <p className="text-sm text-gray-600">Create professional monthly reports matching your Word templates</p>
-                  </div>
-                </div>
-                <Button
-                  variant="primary"
-                  iconName="ArrowRight"
-                  onClick={() => setActiveTab("reports")}
-                >
-                  Go to Reports
-                </Button>
-              </div>
-            </div>
+            </>)}
+
           </div>
         );
       };
@@ -10501,6 +12621,27 @@ import UserManagement from './components/UserManagement';
         const [analysisResult, setAnalysisResult] = useState("");
         const [selectedWorker, setSelectedWorker] = useState("");
 
+        // Executive report state
+        const [execReportScope, setExecReportScope] = useState("all");
+        const [execReportLoading, setExecReportLoading] = useState(false);
+        const [execReportResult, setExecReportResult] = useState("");
+        const [execWeekStart, setExecWeekStart] = useState(() => {
+          const today = new Date();
+          const day = today.getDay();
+          const monday = new Date(today);
+          monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+          return monday.toISOString().split("T")[0];
+        });
+        const [execWeekEnd, setExecWeekEnd] = useState(() => {
+          const today = new Date();
+          const day = today.getDay();
+          const monday = new Date(today);
+          monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate() + 6);
+          return sunday.toISOString().split("T")[0];
+        });
+
         // Filter entries based on selection
         const getFilteredEntries = () => {
           let filtered = entries.filter(e => !e.is_archived);
@@ -10521,12 +12662,13 @@ import UserManagement from './components/UserManagement';
             filtered = filtered.filter(e => e.date <= dateRangeEnd);
           }
 
-          return filtered;
+          return filtered.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
         };
 
         const filteredEntries = getFilteredEntries();
 
         const analysisTypes = [
+          { id: "combined-report", name: "Combined Report", description: "Full report: case summary, services, progress, and goal tracking" },
           { id: "case-summary", name: "Case Summary", description: "Generate a comprehensive summary of case notes for a family" },
           { id: "progress-report", name: "Progress Report", description: "Analyze progress and trends over time" },
           { id: "service-analysis", name: "Service Analysis", description: "Analyze services provided and patterns" },
@@ -10545,59 +12687,117 @@ import UserManagement from './components/UserManagement';
           setAnalysisLoading(true);
           setAnalysisResult("");
 
-          // Build documentation data
-          const docData = filteredEntries.slice(0, 50).map(e => ({
-            date: e.date,
-            family: e.family_name,
-            worker: e.worker_name,
-            serviceType: e.service_type,
-            contactType: e.contact_type,
-            narrative: e.visit_narrative,
-            interventions: e.interventions,
-            plan: e.plan,
-            interactions: e.interactions,
-            parentingSkills: e.parenting_skills,
-            goalsProgress: e.goals_progress,
-            safetyConcern: e.safety_concern_present,
-            safetyConcernDesc: e.safety_concern_description,
-          }));
+          // Build documentation data - truncate long fields to keep prompt within token limits
+          const truncate = (text, max = 500) => {
+            const s = String(text || "").trim();
+            return s.length > max ? s.slice(0, max) + "..." : s;
+          };
+          const docData = filteredEntries.slice(0, 25).map(e => {
+            const base = {
+              date: e.date,
+              family: e.family_name,
+              worker: e.worker_name,
+              serviceType: e.service_type,
+              contactType: e.contact_type,
+              narrative: truncate(e.visit_narrative, 600),
+              interventions: truncate(e.interventions, 400),
+              plan: truncate(e.plan, 300),
+              interactions: truncate(e.interactions, 300),
+              parentingSkills: truncate(e.parenting_skills, 300),
+              goalsProgress: truncate(e.goals_progress, 400),
+              safetyConcern: e.safety_concern_present,
+              safetyConcernDesc: truncate(e.safety_concern_description, 300),
+              participants: e.participants || "",
+            };
+            // Include drug testing fields when present
+            if (e.chain_of_custody) base.chainOfCustody = e.chain_of_custody;
+            if (e.test_result) base.testResult = e.test_result;
+            if (e.sp_test_result) base.sweatPatchResult = e.sp_test_result;
+            if (e.drugs_tested_positive) base.drugsTestedPositive = e.drugs_tested_positive;
+            if (e.sp_drugs_tested_positive) base.spDrugsTestedPositive = e.sp_drugs_tested_positive;
+            if (e.client_admitted_use) base.clientAdmittedUse = e.client_admitted_use;
+            if (e.sp_client_admitted_use) base.spClientAdmittedUse = e.sp_client_admitted_use;
+            if (e.non_admission_explanation) base.nonAdmissionExplanation = truncate(e.non_admission_explanation, 300);
+            if (e.sp_non_admission_explanation) base.spNonAdmissionExplanation = truncate(e.sp_non_admission_explanation, 300);
+            if (e.refusal_reason) base.refusalReason = truncate(e.refusal_reason, 300);
+            if (e.sp_tampered_explanation) base.tamperedExplanation = truncate(e.sp_tampered_explanation, 300);
+            if (e.patch_removed) base.patchRemoved = e.patch_removed;
+            if (e.new_patch_applied) base.newPatchApplied = e.new_patch_applied;
+            if (e.test_mailed) base.testMailed = e.test_mailed;
+            if (e.sp_date_sent) base.dateSent = e.sp_date_sent;
+            // Cancellation fields
+            if (e.cancellation_notification) base.cancellationNotification = truncate(e.cancellation_notification, 300);
+            if (e.cancellation_pre_call) base.cancellationPreCall = truncate(e.cancellation_pre_call, 300);
+            if (e.cancellation_en_route) base.cancellationEnRoute = e.cancellation_en_route;
+            if (e.cancellation_will_makeup) base.willMakeup = e.cancellation_will_makeup;
+            if (e.cancellation_makeup_date) base.makeupDate = e.cancellation_makeup_date;
+            // Engagement/admission
+            if (e.client_admission) base.clientAdmission = truncate(e.client_admission, 300);
+            if (e.engagement) base.engagement = truncate(e.engagement, 300);
+            return base;
+          });
+          const totalEntriesNote = filteredEntries.length > 25 ? `\n\nNote: Showing 25 of ${filteredEntries.length} total entries.\n` : "";
+          const docJson = JSON.stringify(docData);
 
           const prompts = {
-            "case-summary": `Generate a comprehensive case summary based on these case notes for ${selectedFamily ? "the selected family" : "all families"}:\n\n${JSON.stringify(docData, null, 2)}\n\nProvide:\n1. Overview of services provided\n2. Key themes and patterns observed\n3. Family strengths identified\n4. Areas of concern or challenges\n5. Progress made over the time period\n6. Recommendations for continued services\n\nWrite in a professional, clinical tone suitable for case documentation.`,
+            "combined-report": `Generate a thorough combined report for ${selectedFamily ? "the selected family" : "all families"} based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nThis report will be handed directly to a DHHS caseworker. It needs to be comprehensive, specific, and useful.\n\nUse ALL CAPS for section headers. Cover all of the following sections in order:\n\nCASE SUMMARY\n- Family name, dates covered, workers involved\n- Each appointment actually delivered: date, service type, contact type, who was present\n- For drug testing visits: test type, result, chain of custody status, substances identified, client response\n- Key themes from visit narratives\n- Family strengths observed\n- Concerns or challenges documented\n\nSERVICE DELIVERY ANALYSIS\n- Count of appointments by service type (OHFS, IHFS, PTSV, DST-U, DST-MS, DST-SP, etc.)\n- Count by contact type (face-to-face, virtual, phone)\n- Frequency and consistency of services\n- Cancellation/no-show patterns and whether makeups were scheduled\n- If drug testing: number of tests, types, and results summary\n- Service gaps — stretches with no contact or services that should be happening but aren't\n\nPROGRESS REPORT\n- Observable progress and improvements — cite specific visits and dates\n- Challenges or setbacks — be honest\n- Changes in family dynamics, engagement, or circumstances over time\n- Compare earlier visits to recent ones — is the trend positive, flat, or declining?\n- If drug testing data is present: chronological summary of all test results\n\nGOAL TRACKING\n- List each goal documented in the notes\n- For each goal: which visits addressed it, what was done, what progress was observed\n- Barriers to goal achievement with specific examples\n- Which goals are on track, stalled, or need a different approach\n- If drug testing relates to goals (sobriety, compliance): connect test results to goal progress\n\nRECOMMENDATIONS\n- Professional recommendations for continued services, goal plan adjustments, and areas needing attention\n\nBe specific throughout — use actual dates, observations, and data from the notes. Do not generalize or pad with filler.`,
 
-            "progress-report": `Generate a progress report based on these case notes:\n\n${JSON.stringify(docData, null, 2)}\n\nAnalyze:\n1. Timeline of services and engagement\n2. Observable progress and improvements\n3. Challenges encountered\n4. Goal-related progress\n5. Changes in family dynamics or circumstances\n6. Comparison of earlier vs recent notes\n\nMake it suitable for court reports or agency reviews.`,
+            "case-summary": `Case summary for ${selectedFamily ? "the selected family" : "all families"} based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nThis report will be handed directly to a DHHS caseworker. Write it so it's specific and useful to them.\n\nStart with the basics:\n- Family name, dates covered, workers involved\n- List each appointment that was actually delivered: date, service type, contact type, who was present\n- For drug testing visits (DST-U, DST-MS, DST-SP, DST-HF): report the test type, result (positive/negative/refusal/tampered), chain of custody status, any substances identified, and client response\n\nThen provide:\n1. Summary of what actually happened during this period — what services were delivered, what was observed\n2. Key themes from the visit narratives\n3. Family strengths observed in the notes\n4. Concerns or challenges documented\n5. Progress noted over the time period\n6. Recommendations for continued services\n\nOnly include information that is actually in the case notes. Do not generalize or pad with filler. If drug testing data is present, always include a testing summary section with results.`,
 
-            "service-analysis": `Analyze the services documented in these case notes:\n\n${JSON.stringify(docData, null, 2)}\n\nProvide:\n1. Breakdown of service types provided\n2. Frequency and consistency of services\n3. Contact types used (face-to-face, virtual, etc.)\n4. Common interventions employed\n5. Service gaps or opportunities\n6. Recommendations for service optimization\n\nInclude specific data points and percentages where applicable.`,
+            "progress-report": `Progress report based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nThis report needs to be specific enough for a court report or agency review.\n\nStart with the facts:\n- Dates covered, services delivered, number of completed visits vs cancellations/no-shows\n- List each visit with date, service type, and what happened\n\nThen analyze:\n1. Observable progress and improvements — cite specific visits and observations\n2. Challenges or setbacks encountered — be honest and specific\n3. Goal-related progress — what goals were worked on and what movement was seen\n4. Changes in family dynamics, engagement level, or circumstances over time\n5. If drug testing data is present: summarize all test results chronologically with outcomes\n6. Compare earlier visits to more recent ones — is the trend positive, flat, or declining?\n7. Professional recommendations based on what the data shows\n\nDon't sugarcoat or pad. A caseworker needs to know what actually happened.`,
 
-            "goal-tracking": `Analyze goal progress based on these case notes:\n\n${JSON.stringify(docData, null, 2)}\n\nProvide:\n1. Goals mentioned or addressed in documentation\n2. Evidence of progress toward goals\n3. Barriers to goal achievement\n4. Interventions used to support goals\n5. Goal completion status assessment\n6. Recommendations for goal plan adjustments\n\nBe specific about which notes support each finding.`,
+            "service-analysis": `Service analysis based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nBreak down exactly what services were provided:\n\n1. List every appointment: date, service type, contact type, worker, outcome (completed/cancelled/no-show)\n2. Count by service type — how many of each (OHFS, IHFS, PTSV, DST-U, DST-MS, DST-SP, etc.)\n3. Count by contact type — face-to-face, virtual, phone, etc.\n4. Frequency — how often were services happening? Weekly? Less?\n5. Cancellation/no-show patterns — who cancelled, how often, were makeups scheduled?\n6. If drug testing: how many tests, what types, results summary\n7. Interventions used across visits\n8. Gaps — were there stretches with no contact? Services that should be happening but aren't?\n9. Recommendations for service delivery going forward\n\nUse actual numbers and dates. This should read like a service log summary a supervisor would hand to a caseworker.`,
 
-            "safety-review": `Review safety-related documentation in these case notes:\n\n${JSON.stringify(docData, null, 2)}\n\nAnalyze:\n1. Any safety concerns documented\n2. How concerns were addressed\n3. Notifications made (if any)\n4. Patterns in safety observations\n5. Protective factors identified\n6. Risk factors to monitor\n7. Recommendations for safety planning\n\nThis is a sensitive review - be thorough but professional.`,
+            "goal-tracking": `Goal tracking analysis based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nFocus specifically on goals and progress:\n\n1. What goals are documented in these notes? List each one.\n2. For each goal: what specific visits addressed it, what was done, and what progress was observed?\n3. Barriers getting in the way of goal achievement — cite specific examples from the notes\n4. Interventions the FLS used to support each goal\n5. Where do things stand right now — which goals are on track, which are stalled, which need a different approach?\n6. If drug testing is relevant to goals (sobriety, compliance): include test results and how they relate to goal progress\n7. Recommendations for adjusting the goal plan\n\nBe specific — reference actual visit dates and observations. A caseworker should be able to read this and know exactly where the family stands on each goal.`,
 
-            "worker-summary": `Summarize worker activity based on these case notes:\n\n${JSON.stringify(docData, null, 2)}\n\nProvide:\n1. Overview of families served\n2. Types of services provided\n3. Common interventions used\n4. Documentation quality assessment\n5. Strengths in documentation\n6. Areas for documentation improvement\n\nMake it constructive and suitable for supervision discussions.`,
+            "safety-review": `Safety concerns review based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nThis is a focused safety review. Be thorough and direct.\n\n1. List every visit where safety concerns were documented: date, what was observed, how it was addressed\n2. List visits where safety was assessed and NO concerns were noted (this matters too)\n3. If drug testing data is present: report all results — positive results are safety-relevant, include substances identified and client response\n4. Patterns — are concerns recurring, escalating, or improving?\n5. Protective factors observed in the home/family\n6. Risk factors that need continued monitoring\n7. Were appropriate notifications made when concerns arose?\n8. Recommendations for safety planning\n\nDo not soften safety concerns. A caseworker needs the straight facts. If there are serious concerns, say so clearly.`,
 
-            "custom": customPrompt + `\n\nBase your analysis on these case notes:\n\n${JSON.stringify(docData, null, 2)}`,
+            "worker-summary": `Worker activity summary based on these case notes:${totalEntriesNote}\n\n${docJson}\n\nSummarize what this worker (or workers) actually did:\n\n1. Families served and number of visits per family\n2. Breakdown of services delivered by type\n3. Visit completion rate — completed vs cancelled/no-show\n4. Common interventions and approaches used\n5. If drug testing was conducted: number of tests, types, and results\n6. Quality of documentation — are narratives detailed? Are required fields filled in?\n7. Strengths in their work and documentation\n8. Areas where documentation or service delivery could improve\n\nKeep it constructive — this is for a supervision conversation, not a write-up.`,
+
+            "custom": customPrompt + `\n\nBase your analysis on these case notes:${totalEntriesNote}\n\n${docJson}`,
           };
 
           const prompt = prompts[docAnalysisType] || prompts["case-summary"];
 
           try {
-            const response = await fetch("/api/generateReport", {
+            const response = await authFetch("/api/generateReport", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ prompt }),
             });
 
-            if (!response.ok) {
-              throw new Error(`API error: ${response.status}`);
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result?.error) {
+              throw new Error(result?.error || `API error: ${response.status}`);
             }
 
-            const result = await response.json();
-            if (result?.error) {
-              throw new Error(result.error);
-            }
-
-            setAnalysisResult(result?.text || "Unable to generate analysis. Please try again.");
-            showToast("Analysis generated successfully!");
+            const analysisText = result?.text || "Unable to generate analysis. Please try again.";
+            setAnalysisResult(analysisText);
+            showToast("Analysis generated — print dialog opening!");
+            const reportTitle = analysisTypes.find(t => t.id === docAnalysisType)?.name || "Documentation Analysis";
+            const docFamilyProfile = selectedFamily ? activeFamilyDirectoryOptions.find(f => f.key === selectedFamily) : null;
+            const docServiceTypes = selectedFamily
+              ? [...new Set(filteredEntries.map(e => e.service_type).filter(Boolean))]
+              : [];
+            const docEndDate = dateRangeEnd ? new Date(dateRangeEnd + "T00:00:00") : new Date();
+            openBrandedReport({
+              title: reportTitle,
+              subtitle: "Documentation & AI Analysis",
+              metaLines: [
+                selectedFamily ? `Family: ${docFamilyProfile?.caseName || selectedFamily}` : "All Families",
+                dateRangeStart || dateRangeEnd ? `Date Range: ${dateRangeStart || "Start"} to ${dateRangeEnd || "Present"}` : "All Dates",
+                `Entries Analyzed: ${filteredEntries.length}`,
+              ],
+              text: analysisText,
+              fileName: buildReportFileName({
+                familyName: docFamilyProfile?.caseName || "",
+                mcNumber: docFamilyProfile?.mcNumber || "",
+                serviceTypes: docServiceTypes,
+                month: docEndDate.toLocaleString("en-US", { month: "long" }),
+                year: String(docEndDate.getFullYear()),
+                reportType: reportTitle,
+              }),
+            });
           } catch (err) {
             console.error("Analysis error:", err);
             setAnalysisResult(`Error generating analysis: ${err.message}`);
@@ -10613,34 +12813,357 @@ import UserManagement from './components/UserManagement';
         };
 
         const handlePrintResult = () => {
-          const printWindow = window.open("", "_blank");
-          printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Documentation Analysis - Epworth Family Resources</title>
-              <style>
-                body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-                h1 { color: #133c82; border-bottom: 2px solid #133c82; padding-bottom: 10px; }
-                .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
-                .content { white-space: pre-wrap; }
-                @media print { body { margin: 20px; } }
-              </style>
-            </head>
-            <body>
-              <h1>${analysisTypes.find(t => t.id === docAnalysisType)?.name || "Documentation Analysis"}</h1>
-              <div class="meta">
-                Generated: ${new Date().toLocaleString()}<br/>
-                ${selectedFamily ? `Family: ${familyDirectoryOptions.find(f => f.key === selectedFamily)?.caseName || selectedFamily}` : "All Families"}<br/>
-                ${dateRangeStart || dateRangeEnd ? `Date Range: ${dateRangeStart || "Start"} to ${dateRangeEnd || "Present"}` : "All Dates"}<br/>
-                Entries Analyzed: ${filteredEntries.length}
-              </div>
-              <div class="content">${analysisResult}</div>
-            </body>
-            </html>
-          `);
+          const reportTitle = analysisTypes.find(t => t.id === docAnalysisType)?.name || "Documentation Analysis";
+          const docFamilyProfile = selectedFamily ? activeFamilyDirectoryOptions.find(f => f.key === selectedFamily) : null;
+          const docServiceTypes = selectedFamily
+            ? [...new Set(filteredEntries.map(e => e.service_type).filter(Boolean))]
+            : [];
+          const docEndDate = dateRangeEnd ? new Date(dateRangeEnd + "T00:00:00") : new Date();
+          openBrandedReport({
+            title: reportTitle,
+            subtitle: "Documentation & AI Analysis",
+            metaLines: [
+              selectedFamily ? `Family: ${docFamilyProfile?.caseName || selectedFamily}` : "All Families",
+              dateRangeStart || dateRangeEnd ? `Date Range: ${dateRangeStart || "Start"} to ${dateRangeEnd || "Present"}` : "All Dates",
+              `Entries Analyzed: ${filteredEntries.length}`,
+            ],
+            text: analysisResult,
+            fileName: buildReportFileName({
+              familyName: docFamilyProfile?.caseName || "",
+              mcNumber: docFamilyProfile?.mcNumber || "",
+              serviceTypes: docServiceTypes,
+              month: docEndDate.toLocaleString("en-US", { month: "long" }),
+              year: String(docEndDate.getFullYear()),
+              reportType: reportTitle,
+            }),
+          });
+        };
+
+        const handleGenerateExecutiveReport = async () => {
+          // Filter entries to the selected week
+          let weekEntries = entries.filter(e => !e.is_archived && e.date >= execWeekStart && e.date <= execWeekEnd);
+
+          if (execReportScope === "single") {
+            if (!selectedFamily) {
+              showToast("Please select a family for the single-case report.");
+              return;
+            }
+            weekEntries = weekEntries.filter(e => entryMatchesClient(e, selectedFamily));
+          }
+
+          if (weekEntries.length === 0) {
+            showToast("No entries found for the selected week. Please adjust the date range.");
+            return;
+          }
+
+          setExecReportLoading(true);
+          setExecReportResult("");
+
+          const truncate = (text, max = 400) => {
+            const s = String(text || "").trim();
+            return s.length > max ? s.slice(0, max) + "..." : s;
+          };
+
+          // Group entries by family
+          const familyGroups = {};
+          for (const e of weekEntries) {
+            const familyKey = normalize(e.family_directory_key) || normalize(e.family_name) || "unknown";
+            if (!familyGroups[familyKey]) familyGroups[familyKey] = [];
+            familyGroups[familyKey].push(e);
+          }
+
+          // Build case profiles
+          const maxCases = execReportScope === "all" ? 20 : 1;
+          const maxEntriesPerCase = execReportScope === "all" ? 5 : 15;
+          const narrativeMax = execReportScope === "single" ? 500 : 250;
+
+          const activeFamilies = familyDirectoryOptions.filter(o => !o.isArchived);
+          const familyKeys = Object.keys(familyGroups).slice(0, maxCases);
+
+          // Format worker name as "FLS LastName"
+          const toFLSName = (name) => {
+            const n = String(name || "").trim();
+            if (!n) return "";
+            const parts = n.split(/\s+/);
+            const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+            return `FLS ${lastName}`;
+          };
+
+          const caseProfiles = familyKeys.map(key => {
+            const caseEntries = familyGroups[key].slice(0, maxEntriesPerCase);
+            const familyOpt = activeFamilies.find(f => f.key === key) || familyDirectoryOptions.find(f => f.key === key);
+            const serviceTypes = [...new Set(caseEntries.map(e => e.service_type).filter(Boolean))];
+            const workers = [...new Set(caseEntries.map(e => e.worker_name).filter(Boolean))].map(toFLSName);
+            const safetyConcerns = caseEntries
+              .filter(e => e.safety_concern_present === "Yes" || e.safety_concern_present === true)
+              .map(e => truncate(e.safety_concern_description, 200))
+              .filter(Boolean);
+
+            return {
+              familyName: familyOpt?.caseName || key,
+              mcNumber: familyOpt?.mcNumber || "",
+              goalsText: truncate(familyOpt?.goalsText || "", 400),
+              serviceTypes,
+              workers,
+              entryCount: familyGroups[key].length,
+              safetyConcerns,
+              entries: caseEntries.map(e => ({
+                date: e.date,
+                serviceType: e.service_type || "",
+                contactType: e.contact_type || "",
+                worker: toFLSName(e.worker_name),
+                narrative: truncate(e.visit_narrative, narrativeMax),
+                goalsProgress: truncate(e.goals_progress, narrativeMax),
+                interventions: truncate(e.interventions, narrativeMax),
+                plan: truncate(e.plan, execReportScope === "single" ? 300 : 200),
+                interactions: truncate(e.interactions, execReportScope === "single" ? 300 : 200),
+                parentingSkills: truncate(e.parenting_skills, execReportScope === "single" ? 300 : 200),
+                safetyConcernDesc: truncate(e.safety_concern_description, 200),
+              })),
+            };
+          });
+
+          // Gather authorization alerts — only for services the family actually receives (has case notes for)
+          const authorizationAlerts = [];
+          const today = new Date();
+          const alertWindow = new Date(today);
+          alertWindow.setDate(today.getDate() + 14);
+
+          // Build a map of family key → service types from case notes
+          const familyServiceMap = {};
+          for (const profile of caseProfiles) {
+            const famKey = familyKeys.find(k => {
+              const fOpt = activeFamilies.find(f => f.key === k) || familyDirectoryOptions.find(f => f.key === k);
+              return fOpt?.caseName === profile.familyName;
+            });
+            if (famKey) familyServiceMap[famKey] = profile.serviceTypes.map(s => String(s || "").toUpperCase());
+          }
+
+          for (const fam of activeFamilies) {
+            const caseNoteServices = familyServiceMap[fam.key] || [];
+            // If no case notes for this family, skip (no evidence of active services)
+            if (caseNoteServices.length === 0) continue;
+
+            const history = Array.isArray(fam.raw?.Authorization_History) ? fam.raw.Authorization_History : [];
+            for (const auth of history) {
+              if (auth.end_date) {
+                const authSvc = String(auth.service_type || "").toUpperCase();
+                // Only include if authorization matches a service the family actually receives
+                const matchesService = !authSvc || authSvc === "GENERAL"
+                  || caseNoteServices.some(svc => {
+                    if (authSvc.startsWith("DST") && svc.startsWith("DST")) return true;
+                    return authSvc === svc;
+                  });
+                if (!matchesService) continue;
+
+                const endDate = new Date(auth.end_date);
+                if (endDate >= today && endDate <= alertWindow) {
+                  authorizationAlerts.push({
+                    familyName: fam.caseName,
+                    serviceType: auth.service_type || "General",
+                    endDate: auth.end_date,
+                  });
+                }
+              }
+            }
+          }
+
+          try {
+            const response = await authFetch("/api/generateExecutiveReport", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                scope: execReportScope,
+                weekStart: execWeekStart,
+                weekEnd: execWeekEnd,
+                caseProfiles,
+                authorizationAlerts,
+              }),
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result?.error) {
+              throw new Error(result?.error || `API error: ${response.status}`);
+            }
+
+            const reportText = result?.text || "Unable to generate report. Please try again.";
+            setExecReportResult(reportText);
+            showToast("Executive report generated — print dialog opening!");
+            const execFamilyProfile = execReportScope === "single" ? activeFamilyDirectoryOptions.find(f => f.key === selectedFamily) : null;
+            const scopeLabel = execReportScope === "single"
+              ? `Case Deep-Dive: ${execFamilyProfile?.caseName || selectedFamily}`
+              : "All Active Cases — Executive Overview";
+            const execEndDate = execWeekEnd ? new Date(execWeekEnd + "T00:00:00") : new Date();
+            openBrandedReport({
+              title: "Weekly Executive Report",
+              subtitle: scopeLabel,
+              metaLines: [
+                `Reporting Period: ${execWeekStart} to ${execWeekEnd}`,
+              ],
+              text: reportText,
+              fileName: buildReportFileName({
+                familyName: execFamilyProfile?.caseName || "",
+                mcNumber: execFamilyProfile?.mcNumber || "",
+                serviceTypes: "",
+                month: execEndDate.toLocaleString("en-US", { month: "long" }),
+                year: String(execEndDate.getFullYear()),
+                reportType: "Executive Report",
+              }),
+            });
+          } catch (err) {
+            console.error("Executive report error:", err);
+            setExecReportResult(`Error generating report: ${err.message}`);
+            showToast("Failed to generate executive report");
+          } finally {
+            setExecReportLoading(false);
+          }
+        };
+
+        // Shared branded report print window
+        const openBrandedReport = ({ title, subtitle, metaLines, text, fileName }) => {
+          if (!text) return;
+          const printWindow = window.open("", "_blank", "width=850,height=700");
+          if (!printWindow) { showToast("Pop-up blocked — please allow pop-ups for this site."); return; }
+
+          // Clean markdown artifacts from text before parsing
+          const cleanMarkdown = (str) => {
+            return str
+              .replace(/\*\*\*(.*?)\*\*\*/g, "$1")  // ***bold italic***
+              .replace(/\*\*(.*?)\*\*/g, "$1")        // **bold**
+              .replace(/\*(.*?)\*/g, "$1")             // *italic*
+              .replace(/^#{1,6}\s+/gm, "")             // # headings
+              .replace(/^[-*]\s+/gm, "- ")             // normalize bullet styles
+              .replace(/`([^`]+)`/g, "$1");             // `code`
+          };
+
+          const cleanedText = cleanMarkdown(text);
+
+          // Parse sections by ALL CAPS headers or **Markdown Bold** headers
+          const lines = cleanedText.split("\n");
+          let sections = [];
+          let currentSection = { title: "", content: "" };
+          for (const line of lines) {
+            const trimmed = line.trim();
+            // Check for ALL CAPS header (existing logic)
+            const isAllCapsHeader = trimmed.length > 2 && trimmed === trimmed.toUpperCase() && /[A-Z]{3,}/.test(trimmed) && !/^\d+\.$/.test(trimmed);
+            // Check for numbered section header like "1. HEADER" or "1. Header Text"
+            const numberedMatch = trimmed.match(/^\d+\.\s+([A-Z][A-Z\s&—\-:]+)$/);
+            const isNumberedHeader = numberedMatch && numberedMatch[1].length > 3;
+
+            if (isAllCapsHeader || isNumberedHeader) {
+              if (currentSection.title || currentSection.content.trim()) sections.push({ ...currentSection });
+              const headerText = isNumberedHeader ? numberedMatch[1].trim() : trimmed;
+              currentSection = { title: headerText, content: "" };
+            } else {
+              currentSection.content += line + "\n";
+            }
+          }
+          if (currentSection.title || currentSection.content.trim()) sections.push(currentSection);
+
+          let sectionsHtml = "";
+          if (sections.length > 1) {
+            for (const section of sections) {
+              if (section.title) sectionsHtml += `<div class="section-title">${section.title}</div>`;
+              if (section.content.trim()) sectionsHtml += `<div class="section-content">${section.content.trim().replace(/\n/g, "<br/>")}</div>`;
+            }
+          } else {
+            sectionsHtml = `<div class="section-content">${text.replace(/\n/g, "<br/>")}</div>`;
+          }
+
+          const metaHtml = (metaLines || []).filter(Boolean).join("<br/>");
+
+          printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>${fileName || title + " - Epworth Family Resources"}</title>
+  <style>
+    @page { size: letter; margin: 0.5in; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif; color: #1a1a1a; background: #f8fafc; }
+    .report-container { max-width: 800px; margin: 0 auto; background: white; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d4a6f 100%); color: white; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; }
+    .header-left h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .header-left .subtitle { margin-top: 4px; font-size: 13px; opacity: 0.85; font-weight: 400; }
+    .header-right { text-align: right; }
+    .header-right .org { font-size: 14px; font-weight: 600; opacity: 0.95; }
+    .header-right .date { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+    .content-area { padding: 24px 32px; }
+    .meta-block { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 12px; color: #64748b; line-height: 1.7; }
+    .section-title { font-size: 13px; font-weight: 700; color: #1e3a5f; text-transform: uppercase; letter-spacing: 0.5px; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+    .section-title:first-child { margin-top: 0; }
+    .section-content { font-size: 13px; line-height: 1.7; color: #374151; margin-bottom: 12px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid #c89a2a; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #9ca3af; }
+    .footer .confidential { color: #c89a2a; font-weight: 700; font-size: 11px; }
+    .actions { padding: 16px 32px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; gap: 8px; }
+    .btn { padding: 10px 20px; cursor: pointer; background: #1e3a5f; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 13px; }
+    .btn:hover { background: #162036; }
+    .btn-secondary { background: white; color: #1e3a5f; border: 1px solid #1e3a5f; }
+    .btn-secondary:hover { background: #f1f5f9; }
+    @media print { body { background: white; } .actions { display: none; } .report-container { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="header">
+      <div class="header-left">
+        <h1>${title}</h1>
+        <div class="subtitle">${subtitle}</div>
+      </div>
+      <div class="header-right">
+        <div class="org">Epworth Family Resources</div>
+        <div class="date">Generated ${new Date().toLocaleDateString()}</div>
+      </div>
+    </div>
+    <div class="content-area">
+      ${metaHtml ? `<div class="meta-block">${metaHtml}</div>` : ""}
+      ${sectionsHtml}
+      <div class="footer">
+        <div class="confidential">CONFIDENTIAL — FOR INTERNAL USE ONLY</div>
+        <div>Epworth Family Resources</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="window.print()">Print Report</button>
+      <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.querySelector('.content-area').innerText).then(()=>alert('Copied to clipboard!'))">Copy Text</button>
+    </div>
+  </div>
+  <scr` + `ipt>
+    window.onload = function() {
+      setTimeout(function() { try { window.print(); } catch(e) {} }, 800);
+    };
+  </scr` + `ipt>
+</body>
+</html>`);
           printWindow.document.close();
-          printWindow.print();
+        };
+
+        const handlePrintExecutiveReport = () => {
+          const execFamilyProfile = execReportScope === "single" ? familyDirectoryOptions.find(f => f.key === selectedFamily) : null;
+          const scopeLabel = execReportScope === "single"
+            ? `Case Deep-Dive: ${execFamilyProfile?.caseName || selectedFamily}`
+            : "All Active Cases — Executive Overview";
+          const execEndDate = execWeekEnd ? new Date(execWeekEnd + "T00:00:00") : new Date();
+          openBrandedReport({
+            title: "Weekly Executive Report",
+            subtitle: scopeLabel,
+            metaLines: [
+              `Reporting Period: ${execWeekStart} to ${execWeekEnd}`,
+            ],
+            text: execReportResult,
+            fileName: buildReportFileName({
+              familyName: execFamilyProfile?.caseName || "",
+              mcNumber: execFamilyProfile?.mcNumber || "",
+              serviceTypes: "",
+              month: execEndDate.toLocaleString("en-US", { month: "long" }),
+              year: String(execEndDate.getFullYear()),
+              reportType: "Executive Report",
+            }),
+          });
+        };
+
+        const handleCopyExecResult = () => {
+          navigator.clipboard.writeText(execReportResult);
+          showToast("Executive report copied to clipboard!");
         };
 
         return (
@@ -10650,6 +13173,130 @@ import UserManagement from './components/UserManagement';
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Documentation & AI Reports</h2>
               <p className="text-gray-600">Use AI to analyze case notes, generate summaries, and create reports from your documentation.</p>
             </div>
+
+            {/* Weekly Executive Report */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <LucideIcon name="BarChart3" className="w-6 h-6 text-[#1E3A5F]" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">Weekly Executive Report</h3>
+                  <p className="text-sm text-gray-500">AI-powered weekly analysis for leadership review</p>
+                </div>
+              </div>
+
+              {/* Scope Toggle */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Report Scope</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setExecReportScope("all")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      execReportScope === "all"
+                        ? "border-[#1E3A5F] bg-blue-50 text-[#1E3A5F] shadow-sm"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    All Active Cases
+                  </button>
+                  <button
+                    onClick={() => setExecReportScope("single")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      execReportScope === "single"
+                        ? "border-[#1E3A5F] bg-blue-50 text-[#1E3A5F] shadow-sm"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    Single Case Deep-Dive
+                  </button>
+                </div>
+              </div>
+
+              {/* Family Selector (single-case only) */}
+              {execReportScope === "single" && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Family</label>
+                  <select
+                    value={selectedFamily}
+                    onChange={(e) => setSelectedFamily(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                  >
+                    <option value="">— Select a Family —</option>
+                    {familyDirectoryOptions.filter(o => !o.isArchived).map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.mcNumber ? `${o.caseName} (${o.mcNumber})` : o.caseName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Week Date Range */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Week Start</label>
+                  <input
+                    type="date"
+                    value={execWeekStart}
+                    onChange={(e) => setExecWeekStart(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Week End</label>
+                  <input
+                    type="date"
+                    value={execWeekEnd}
+                    onChange={(e) => setExecWeekEnd(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <Button
+                variant="primary"
+                iconName={execReportLoading ? "Loader2" : "BarChart3"}
+                onClick={handleGenerateExecutiveReport}
+                disabled={execReportLoading || (execReportScope === "single" && !selectedFamily)}
+                className={execReportLoading ? "animate-pulse" : ""}
+              >
+                {execReportLoading ? "Generating Executive Report..." : "Generate Executive Report"}
+              </Button>
+            </div>
+
+            {/* Executive Report Results */}
+            {execReportResult && (
+              <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Executive Report</h3>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" iconName="Copy" onClick={handleCopyExecResult}>
+                      Copy
+                    </Button>
+                    <Button variant="secondary" iconName="Printer" onClick={handlePrintExecutiveReport}>
+                      Print
+                    </Button>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-[600px] overflow-y-auto">
+                  <div className="prose prose-sm max-w-none text-gray-700">
+                    {execReportResult.split("\n").map((line, i) => {
+                      const trimmed = line.trim();
+                      const clean = trimmed.replace(/\*\*\*(.*?)\*\*\*/g, "$1").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+                      const isHeader = clean.length > 2 && clean === clean.toUpperCase() && /[A-Z]{3,}/.test(clean) && !/^\d+\.$/.test(clean);
+                      const numMatch = clean.match(/^\d+\.\s+([A-Z][A-Z\s&—\-:]+)$/);
+                      if (isHeader || numMatch) {
+                        return <div key={i} className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wide mt-4 mb-1 pb-1 border-b border-gray-200">{numMatch ? numMatch[1] : clean}</div>;
+                      }
+                      if (!clean) return <div key={i} className="h-2" />;
+                      return <div key={i} className="text-sm text-gray-700 leading-relaxed">{clean}</div>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="border-t border-gray-200" />
 
             {/* Filters & Options */}
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
@@ -10780,8 +13427,21 @@ import UserManagement from './components/UserManagement';
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4 max-h-[600px] overflow-y-auto">
-                  <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-700">
-                    {analysisResult}
+                  <div className="prose prose-sm max-w-none text-gray-700">
+                    {analysisResult.split("\n").map((line, i) => {
+                      const trimmed = line.trim();
+                      // Clean markdown bold/italic from any line
+                      const clean = trimmed.replace(/\*\*\*(.*?)\*\*\*/g, "$1").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+                      // ALL CAPS header
+                      const isHeader = clean.length > 2 && clean === clean.toUpperCase() && /[A-Z]{3,}/.test(clean) && !/^\d+\.$/.test(clean);
+                      // Numbered header like "1. SECTION NAME"
+                      const numMatch = clean.match(/^\d+\.\s+([A-Z][A-Z\s&—\-:]+)$/);
+                      if (isHeader || numMatch) {
+                        return <div key={i} className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wide mt-4 mb-1 pb-1 border-b border-gray-200">{numMatch ? numMatch[1] : clean}</div>;
+                      }
+                      if (!clean) return <div key={i} className="h-2" />;
+                      return <div key={i} className="text-sm text-gray-700 leading-relaxed">{clean}</div>;
+                    })}
                   </div>
                 </div>
               </div>
@@ -10796,7 +13456,7 @@ import UserManagement from './components/UserManagement';
         const providerPrefix = "The Family Life Specialist from Epworth Family Resources";
 
         // Get selected profile
-        const selectedProfile = familyDirectoryOptions.find(p => p.key === reportFormClient);
+        const selectedProfile = activeFamilyDirectoryOptions.find(p => p.key === reportFormClient);
 
         // Get service types for current report type
         const getServiceTypes = (type) => {
@@ -10825,14 +13485,14 @@ import UserManagement from './components/UserManagement';
             if (!matches) return false;
             const svcType = String(e.service_type || "").toUpperCase();
             return serviceTypes.includes(svcType);
-          });
+          }).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
         };
 
         const normalizeContactType = (entry) => String(entry?.contact_type || entry?.contact || "").trim();
 
         const getEntryStatus = (entry) => {
           const contactType = normalizeContactType(entry);
-          const isCancelled = ["Cancelled by Parent", "Cancelled by Worker", "Cancelled In Route"].includes(contactType);
+          const isCancelled = ["Cancelled by Parent", "Cancelled by Worker", "Cancelled for Weather", "Cancelled by Team", "Cancelled No Confirmation", "Cancelled In Route"].includes(contactType);
           const isNoShow = contactType === "No Show" || contactType === "No-Show";
           const isRescheduled = contactType === "Rescheduled" || entry?.cancellation_will_makeup === "Yes";
           const isEndedEarly = contactType === "Ended Early" || entry?.ended_early === "Yes";
@@ -11107,12 +13767,10 @@ import UserManagement from './components/UserManagement';
             cancellations: cancellations.toString(),
             rescheduled: rescheduled.toString(),
             ended_early: endedEarly.toString(),
-            // Goals from profile
-            goal_1: goals[0] || "",
-            goal_2: goals[1] || "",
-            goal_3: goals[2] || "",
-            // Goal progress from parsing
-            ...goalProgress,
+            // All goals from profile as a list
+            goals_list: goals.filter(Boolean),
+            // Goal progress — single unified narrative (populated by AI or manually)
+            goals_progress_narrative: "",
             // Safety info
             ...safetyInfo,
             // Barriers
@@ -11151,14 +13809,15 @@ import UserManagement from './components/UserManagement';
           setReportAutoPopulating(false);
         };
 
-        // Auto-populate when client, month, year, or type changes
-        useEffect(() => {
-          if (!reportFormClient || !selectedProfile) return;
-          const key = `${reportFormClient}|${reportFormMonth}|${reportFormYear}|${reportFormType}|${selectedProfile.key || ""}`;
+        // Trigger auto-populate (called from onChange handlers, not useEffect, to avoid hooks-in-conditional-function-call)
+        const triggerAutoPopulate = (client, month, year, type) => {
+          const profile = activeFamilyDirectoryOptions.find(p => p.key === client);
+          if (!client || !profile) return;
+          const key = `${client}|${month}|${year}|${type}|${profile.key || ""}`;
           if (reportAutoKeyRef.current === key) return;
           reportAutoKeyRef.current = key;
-          autoPopulateFromNotes(selectedProfile, reportFormMonth, reportFormYear, reportFormType);
-        }, [reportFormClient]);
+          autoPopulateFromNotes(profile, month, year, type);
+        };
 
         // Generate AI content for narrative sections (enhanced)
         const generateAiContent = async () => {
@@ -11170,7 +13829,7 @@ import UserManagement from './components/UserManagement';
 
           setReportAiGenerating(true);
           try {
-            const resp = await fetch("/api/generateMonthlySummary", {
+            const resp = await authFetch("/api/generateMonthlySummary", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -11201,10 +13860,8 @@ import UserManagement from './components/UserManagement';
 
             const newFormData = {
               ...reportFormData,
-              // Family Support / PTSV fields
-              goal_1_progress: extractSection(summary, "PROGRESS TOWARD GOALS")?.split("Goal 2")[0] || reportFormData.goal_1_progress,
-              goal_2_progress: extractSection(summary, "Goal 2") || reportFormData.goal_2_progress,
-              goal_3_progress: extractSection(summary, "Goal 3") || reportFormData.goal_3_progress,
+              // Family Support / PTSV fields — one unified goals narrative
+              goals_progress_narrative: extractSection(summary, "PROGRESS TOWARD GOALS") || reportFormData.goals_progress_narrative,
               barriers_addressed: extractSection(summary, "BARRIERS IDENTIFIED AND ADDRESSED") || reportFormData.barriers_addressed,
               safety_assessment: extractSection(summary, "CHILD SAFETY ASSESSMENT") || reportFormData.safety_assessment,
               family_progress_summary: extractSection(summary, "SUMMARY") || extractSection(summary, "FAMILY'S PROGRESS") || reportFormData.family_progress_summary,
@@ -11233,12 +13890,30 @@ import UserManagement from './components/UserManagement';
             ? "PARENTING TIME / SUPERVISED VISITATION – MONTHLY SUMMARY REPORT"
             : "DRUG TESTING SPECIMEN COLLECTION – MONTHLY CONTACT LOG / SUMMARY REPORT";
 
+          const serviceLabel = reportFormType === "family_support" ? "Family Support"
+            : reportFormType === "ptsv" ? "PTSV"
+            : "Drug Testing";
+
+          // Parse month/year from report_month_year (e.g. "December 2024")
+          const rmyParts = String(reportFormData.report_month_year || "").split(/\s+/);
+          const rmyMonth = rmyParts[0] || "";
+          const rmyYear = rmyParts[1] || "";
+
+          const fileName = buildReportFileName({
+            familyName: reportFormData.family_name,
+            mcNumber: reportFormData.mc_number,
+            serviceTypes: serviceLabel,
+            month: rmyMonth,
+            year: rmyYear,
+            reportType: "Monthly Summary",
+          });
+
           const printWindow = window.open("", "_blank");
           printWindow.document.write(`
 <!DOCTYPE html>
 <html>
 <head>
-  <title>${reportTitle}</title>
+  <title>${fileName || reportTitle}</title>
   <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
   <style>
     @page { size: letter; margin: 0.5in; }
@@ -11619,18 +14294,15 @@ import UserManagement from './components/UserManagement';
 
   <div class="section">
     <div class="section-title">Progress Toward Goals</div>
-    <div class="field-row" style="flex-direction: column;">
-      <span class="field-label">Goal 1: ${reportFormData.goal_1 || ""}</span>
-      <div class="narrative">${reportFormData.goal_1_progress || ""}</div>
+    ${(reportFormData.goals_list || []).length > 0 ? `
+    <div style="margin-bottom: 6px;">
+      <span class="field-label" style="display: block; margin-bottom: 4px;">Goals:</span>
+      <ol style="margin: 0 0 0 18px; padding: 0; font-size: 8.5pt; line-height: 1.5;">
+        ${(reportFormData.goals_list || []).map(g => `<li>${g}</li>`).join("")}
+      </ol>
     </div>
-    <div class="field-row" style="flex-direction: column; margin-top: 8px;">
-      <span class="field-label">Goal 2: ${reportFormData.goal_2 || ""}</span>
-      <div class="narrative">${reportFormData.goal_2_progress || ""}</div>
-    </div>
-    <div class="field-row" style="flex-direction: column; margin-top: 8px;">
-      <span class="field-label">Goal 3: ${reportFormData.goal_3 || ""}</span>
-      <div class="narrative">${reportFormData.goal_3_progress || ""}</div>
-    </div>
+    ` : ""}
+    <div class="narrative">${reportFormData.goals_progress_narrative || reportFormData.goal_1_progress || ""}</div>
   </div>
 
   <div class="section">
@@ -11760,18 +14432,15 @@ import UserManagement from './components/UserManagement';
 
   <div class="section">
     <div class="section-title">Progress Toward Goals</div>
-    <div class="field-row" style="flex-direction: column;">
-      <span class="field-label">Goal 1: ${reportFormData.goal_1 || ""}</span>
-      <div class="narrative">${reportFormData.goal_1_progress || ""}</div>
+    ${(reportFormData.goals_list || []).length > 0 ? `
+    <div style="margin-bottom: 6px;">
+      <span class="field-label" style="display: block; margin-bottom: 4px;">Goals:</span>
+      <ol style="margin: 0 0 0 18px; padding: 0; font-size: 8.5pt; line-height: 1.5;">
+        ${(reportFormData.goals_list || []).map(g => `<li>${g}</li>`).join("")}
+      </ol>
     </div>
-    <div class="field-row" style="flex-direction: column; margin-top: 8px;">
-      <span class="field-label">Goal 2: ${reportFormData.goal_2 || ""}</span>
-      <div class="narrative">${reportFormData.goal_2_progress || ""}</div>
-    </div>
-    <div class="field-row" style="flex-direction: column; margin-top: 8px;">
-      <span class="field-label">Goal 3: ${reportFormData.goal_3 || ""}</span>
-      <div class="narrative">${reportFormData.goal_3_progress || ""}</div>
-    </div>
+    ` : ""}
+    <div class="narrative">${reportFormData.goals_progress_narrative || reportFormData.goal_1_progress || ""}</div>
   </div>
 
   <div class="section">
@@ -11803,6 +14472,10 @@ import UserManagement from './components/UserManagement';
 
   <div class="signature-section">
     <div class="signature-line"><span class="signature-name">${reportFormData.worker_name || ""}</span><br><span style="font-size: 8pt; color: #666;">${reportFormType === "drug_testing" ? "Family Life Specialist" : reportFormType === "ptsv" ? "PTSV Worker" : "Family Support Worker"} Signature</span></div>
+    <div class="signature-line">${new Date().toLocaleDateString()}<br><span style="font-size: 8pt; color: #666;">Date</span></div>
+  </div>
+  <div class="signature-section" style="margin-top: 16px;">
+    <div class="signature-line"><span class="signature-name">Brandon Hinrichs</span><br><span style="font-size: 8pt; color: #666;">IHS Director</span></div>
     <div class="signature-line">${new Date().toLocaleDateString()}<br><span style="font-size: 8pt; color: #666;">Date</span></div>
   </div>
 
@@ -11885,9 +14558,11 @@ import UserManagement from './components/UserManagement';
                   <select
                     value={reportFormType}
                     onChange={(e) => {
-                      setReportFormType(e.target.value);
+                      const val = e.target.value;
+                      setReportFormType(val);
                       setReportFormData({});
                       setReportSessionLog([]);
+                      triggerAutoPopulate(reportFormClient, reportFormMonth, reportFormYear, val);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
@@ -11900,11 +14575,15 @@ import UserManagement from './components/UserManagement';
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Client</label>
                   <select
                     value={reportFormClient}
-                    onChange={(e) => setReportFormClient(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setReportFormClient(val);
+                      triggerAutoPopulate(val, reportFormMonth, reportFormYear, reportFormType);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Select a client...</option>
-                    {familyDirectoryOptions.map((p) => (
+                    {activeFamilyDirectoryOptions.map((p) => (
                       <option key={p.key} value={p.key}>
                         {p.caseName || "Unknown"} {p.mcNumber ? `(${p.mcNumber})` : ""}
                       </option>
@@ -11915,7 +14594,11 @@ import UserManagement from './components/UserManagement';
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Month</label>
                   <select
                     value={reportFormMonth}
-                    onChange={(e) => setReportFormMonth(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setReportFormMonth(val);
+                      triggerAutoPopulate(reportFormClient, val, reportFormYear, reportFormType);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     {monthNames.map((m, i) => (
@@ -11927,7 +14610,11 @@ import UserManagement from './components/UserManagement';
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Year</label>
                   <select
                     value={reportFormYear}
-                    onChange={(e) => setReportFormYear(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setReportFormYear(val);
+                      triggerAutoPopulate(reportFormClient, reportFormMonth, val, reportFormType);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     {[2023, 2024, 2025, 2026].map((y) => (
@@ -11973,6 +14660,50 @@ import UserManagement from './components/UserManagement';
                 >
                   Print Report
                 </Button>
+              </div>
+            </div>
+
+            {/* Batch Export Section */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+              <div className="flex items-center mb-4">
+                <LucideIcon name="PackageOpen" className="w-6 h-6 text-indigo-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">Batch Export</h3>
+                  <p className="text-gray-500 text-sm">Export all case notes or monthly reports for every client as a ZIP of printable files</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                <button
+                  onClick={batchExportCaseNotes}
+                  disabled={batchExportLoading || batchReportLoading}
+                  className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  <LucideIcon name="FileText" className="w-5 h-5" />
+                  <div className="text-left">
+                    <div className="font-semibold text-sm">{batchExportLoading ? "Exporting..." : "Batch Export Case Notes"}</div>
+                    <div className="text-xs text-blue-200">All clients, grouped by service type</div>
+                  </div>
+                </button>
+                <button
+                  onClick={batchExportMonthlyReports}
+                  disabled={batchExportLoading || batchReportLoading}
+                  className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  <LucideIcon name="FolderDown" className="w-5 h-5" />
+                  <div className="text-left">
+                    <div className="font-semibold text-sm">{batchReportLoading ? "Exporting..." : "Batch Export Monthly Reports"}</div>
+                    <div className="text-xs text-indigo-200">All clients, per service, per month</div>
+                  </div>
+                </button>
+              </div>
+              {(batchExportProgress || batchReportProgress) && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+                  <LucideIcon name="Loader2" className="w-4 h-4 animate-spin" />
+                  {batchExportProgress || batchReportProgress}
+                </div>
+              )}
+              <div className="mt-3 text-xs text-gray-400">
+                Files named: lastname.firstname.MasterCase.service.date(monthyear).pdf
               </div>
             </div>
 
@@ -12244,20 +14975,20 @@ import UserManagement from './components/UserManagement';
               {reportFormType !== "drug_testing" && (
                 <div className="mb-6">
                   <h4 className="font-semibold text-gray-700 border-b pb-1 mb-3">Progress Toward Goals</h4>
-                  <div className="space-y-4">
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      {renderReportInput("Goal 1", "goal_1", "text", "Enter goal...")}
-                      {renderReportInput("Progress", "goal_1_progress", "text", "Document progress toward this goal...", 2)}
+                  {/* Goals list from profile */}
+                  {(reportFormData.goals_list || []).length > 0 ? (
+                    <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Goals from Profile</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        {(reportFormData.goals_list || []).map((g, i) => (
+                          <li key={i} className="text-sm text-gray-800">{g}</li>
+                        ))}
+                      </ol>
                     </div>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      {renderReportInput("Goal 2", "goal_2", "text", "Enter goal...")}
-                      {renderReportInput("Progress", "goal_2_progress", "text", "Document progress toward this goal...", 2)}
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      {renderReportInput("Goal 3", "goal_3", "text", "Enter goal...")}
-                      {renderReportInput("Progress", "goal_3_progress", "text", "Document progress toward this goal...", 2)}
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic mb-3">No goals found in profile. Select a family to load goals.</p>
+                  )}
+                  {renderReportInput("Overall Progress Narrative", "goals_progress_narrative", "text", "Summarize overall progress toward all goals during this reporting period...", 6)}
                 </div>
               )}
 
@@ -12387,41 +15118,123 @@ import UserManagement from './components/UserManagement';
 	        }
 
         return (
-	          <div className="min-h-screen bg-transparent font-sans text-gray-900 pb-20 md:pb-0" style={{ fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+	          <div className="min-h-screen bg-transparent font-sans text-gray-900 pb-4 md:pb-20" style={{ fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
 	            <div id="app-ui">
-	            <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-10 border-b border-gray-200">
-	              <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-	                <div className="flex justify-between h-16">
-	                  <div className="flex items-center">
-	                    <div className="mr-3 flex items-center">
-	                      <img src={EPWORTH_LOGO_SRC} alt="Epworth Family Resources" className="h-10 w-auto object-contain" />
+	            <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-40 border-b border-gray-200" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+	              <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+	                <div className="flex justify-between h-14 sm:h-16">
+	                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+	                    {/* Hamburger button - mobile only */}
+	                    <button
+	                      onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+	                      className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
+	                      aria-label="Open navigation menu"
+	                    >
+	                      <LucideIcon name={mobileMenuOpen ? "X" : "Menu"} className="w-6 h-6 text-gray-700" />
+	                    </button>
+	                    <div className="mr-1 sm:mr-3 flex items-center flex-shrink-0">
+	                      <img src={EPWORTH_LOGO_SRC} alt="Epworth Family Resources" className="h-8 sm:h-10 w-auto object-contain" />
 	                    </div>
-	                    <div>
+	                    <div className="min-w-0">
 	                      <h1
-	                        className="text-xl font-extrabold leading-tight text-[var(--brand-navy)]"
+	                        className="text-base sm:text-xl font-extrabold leading-tight text-[var(--brand-navy)] truncate"
 	                        style={{ fontFamily: "Merriweather, ui-serif, Georgia, serif" }}
 	                      >
-	                        Epworth Family Resources Notes
+	                        <span className="hidden sm:inline">Epworth Family Resources Notes</span>
+	                        <span className="sm:hidden">Epworth Notes</span>
 	                      </h1>
 	                      <p className="text-xs text-gray-500 hidden sm:block">Case notes, profiles, and export</p>
 	                    </div>
 	                  </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                     {user?.isAnonymous ? (
                       <Button variant="secondary" onClick={linkOrSignInWithGooglePopup} iconName="Link2" className="text-sm">
-                        Link Account
+                        <span className="hidden sm:inline">Link Account</span>
+                        <span className="sm:hidden">Link</span>
                       </Button>
                     ) : (
                       <div className="text-xs text-gray-500 hidden sm:block">{user?.email || "Signed in"}</div>
                     )}
                     <Button variant="ghost" onClick={signOut} iconName="LogOut" className="text-sm" title="Sign out">
-                      Sign out
+                      <span className="hidden sm:inline">Sign out</span>
                     </Button>
                   </div>
                 </div>
               </div>
             </nav>
+
+            {/* Mobile Navigation Drawer */}
+            {mobileMenuOpen && (
+              <div className="md:hidden fixed inset-0 z-50">
+                {/* Backdrop */}
+                <div
+                  className="absolute inset-0 bg-black/50 mobile-drawer-backdrop"
+                  onClick={() => setMobileMenuOpen(false)}
+                />
+                {/* Drawer */}
+                <div className="absolute top-0 left-0 bottom-0 w-72 bg-white shadow-2xl mobile-drawer-panel flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+                  {/* Drawer Header */}
+                  <div className="flex items-center justify-between px-4 h-14 border-b border-gray-200 flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <img src={EPWORTH_LOGO_SRC} alt="Epworth" className="h-8 w-auto object-contain" />
+                      <span className="text-sm font-bold text-[var(--brand-navy)]">Navigation</span>
+                    </div>
+                    <button
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
+                      aria-label="Close navigation menu"
+                    >
+                      <LucideIcon name="X" className="w-5 h-5 text-gray-500" />
+                    </button>
+                  </div>
+
+                  {/* Navigation Items */}
+                  <div className="flex-1 overflow-y-auto py-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+                    {[
+                      { key: "form", icon: "Edit2", label: "New Entry" },
+                      { key: "table", icon: "Table", label: "Note History" },
+                      { key: "contacts", icon: "Phone", label: "Contacts" },
+                      ...(isAdmin ? [
+                        { key: "bulkEdit", icon: "Edit3", label: "Bulk Edit" },
+                        { key: "goals", icon: "Users", label: "Client Profiles" },
+                        { key: "reports", icon: "FileText", label: "Monthly Reports" },
+                        { key: "audit", icon: "History", label: "Audit Log" },
+                        { key: "docsReports", icon: "FileText", label: "Docs & Reports" },
+                        { key: "admin", icon: "Settings", label: "Admin Panel" },
+                      ] : []),
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => {
+                          setActiveTab(item.key);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                          activeTab === item.key
+                            ? "bg-blue-50 text-[var(--brand-navy)] font-semibold border-l-4 border-[var(--brand-navy)]"
+                            : "text-gray-700 hover:bg-gray-50 border-l-4 border-transparent"
+                        }`}
+                      >
+                        <LucideIcon name={item.icon} className={`w-5 h-5 flex-shrink-0 ${activeTab === item.key ? "text-[var(--brand-navy)]" : "text-gray-400"}`} />
+                        <span className="text-sm">{item.label}</span>
+                      </button>
+                    ))}
+
+                    {/* Divider + User Info */}
+                    <div className="border-t border-gray-200 mt-3 pt-3 px-4">
+                      <div className="text-xs text-gray-500 truncate">{user?.email || "Signed in"}</div>
+                      {isAdmin && (
+                        <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                          <LucideIcon name="Shield" className="w-3 h-3" />
+                          Admin
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {authError && (
               <div className="bg-red-50 border-b border-red-200 text-red-700">
@@ -12470,7 +15283,7 @@ import UserManagement from './components/UserManagement';
 	              </div>
 	            )}
 
-			            <main className={`${activeTab === "table" || activeTab === "bulkEdit" || activeTab === "goals" || activeTab === "contacts" || activeTab === "admin" || activeTab === "users" || activeTab === "reports" || activeTab === "audit" || activeTab === "docsReports" ? "w-full" : "max-w-6xl mx-auto"} px-4 sm:px-6 lg:px-8 py-6`}>
+			            <main className={`${activeTab === "table" || activeTab === "bulkEdit" || activeTab === "goals" || activeTab === "contacts" || activeTab === "admin" || activeTab === "reports" || activeTab === "audit" || activeTab === "docsReports" ? "w-full" : "max-w-6xl mx-auto"} px-4 sm:px-6 lg:px-8 py-6`}>
 	              {activeTab === "form" && FormView()}
 	              {activeTab === "table" &&
 		              (loadingEntries && !entries.length ? (
@@ -12491,117 +15304,52 @@ import UserManagement from './components/UserManagement';
 	                ) : (
 	                  GoalsView()
 	                ))}
-	              {activeTab === "contacts" && isAdmin && NonBillableContactsView()}
+	              {activeTab === "contacts" && isAdmin && <NonBillableContactsView />}
 	              {activeTab === "admin" && isAdmin && AdminView()}
-	              {activeTab === "users" && isAdmin && <UserManagement isAdmin={isAdmin} />}
 	              {activeTab === "reports" && isAdmin && MonthlyReportsView()}
 	              {activeTab === "audit" && isAdmin && AuditLogView()}
-	              {activeTab === "docsReports" && isAdmin && DocsReportsView()}
+	              {activeTab === "docsReports" && isAdmin && <DocsReportsView />}
 		            </main>
 
 	            {saveToast && (
-	              <div className="fixed left-1/2 -translate-x-1/2 bottom-20 md:bottom-24 z-[60]">
+	              <div className="fixed left-1/2 -translate-x-1/2 bottom-8 md:bottom-24 z-[60]">
 	                <div className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-semibold">
 	                  {saveToast}
 	                </div>
 	              </div>
 	            )}
 
-		            <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 pb-[env(safe-area-inset-bottom)] shadow-lg z-50">
-		              <div className="max-w-6xl mx-auto flex justify-around items-center h-16 px-4 sm:px-6 lg:px-8">
-	                <button
-	                  onClick={() => setActiveTab("form")}
-                  className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "form" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                >
-                  <LucideIcon name="Edit2" className="w-6 h-6" />
-                  <span className="text-xs font-medium">Entry</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("table")}
-                  className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "table" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                >
-                  <LucideIcon name="Table" className="w-6 h-6" />
-                  <span className="text-xs font-medium">Note History</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("contacts")}
-                  className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "contacts" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                >
-                  <LucideIcon name="Phone" className="w-6 h-6" />
-                  <span className="text-xs font-medium">Contacts</span>
-                </button>
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("bulkEdit")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "bulkEdit" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="Edit3" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Bulk Edit</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("goals")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "goals" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="Users" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Client Profiles</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("reports")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "reports" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="FileText" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Reports</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("audit")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "audit" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="History" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Audit</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("docsReports")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "docsReports" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="FileText" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Docs</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("admin")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "admin" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="Settings" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Admin</span>
-                  </button>
-                )}
-
-                {isAdmin && (
-                  <button
-                    onClick={() => setActiveTab("users")}
-                    className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeTab === "users" ? "text-[var(--brand-navy)]" : "text-gray-400"}`}
-                  >
-                    <LucideIcon name="UserPlus" className="w-6 h-6" />
-                    <span className="text-xs font-medium">Users</span>
-                  </button>
-                )}
+		            <div className="hidden md:block fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 pb-[env(safe-area-inset-bottom)] shadow-lg z-50">
+		              <div className="max-w-6xl mx-auto flex items-center justify-around h-16 px-4 lg:px-8">
+	                {[
+	                  { key: "form", icon: "Edit2", label: "Entry" },
+	                  { key: "table", icon: "Table", label: "History" },
+	                  { key: "contacts", icon: "Phone", label: "Contacts" },
+	                  ...(isAdmin ? [
+	                    { key: "bulkEdit", icon: "Edit3", label: "Bulk Edit" },
+	                    { key: "goals", icon: "Users", label: "Profiles" },
+	                    { key: "reports", icon: "FileText", label: "Reports" },
+	                    { key: "audit", icon: "History", label: "Audit" },
+	                    { key: "docsReports", icon: "FileText", label: "Docs" },
+	                    { key: "admin", icon: "Settings", label: "Admin" },
+	                  ] : []),
+	                ].map((item) => (
+	                  <button
+	                    key={item.key}
+	                    onClick={() => setActiveTab(item.key)}
+	                    className={`relative flex flex-col items-center justify-center h-full px-3 py-1 gap-0.5 transition-colors ${
+	                      activeTab === item.key
+	                        ? "text-[var(--brand-navy)]"
+	                        : "text-gray-400 hover:text-gray-600"
+	                    }`}
+	                  >
+	                    {activeTab === item.key && (
+	                      <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[var(--brand-navy)] rounded-b" />
+	                    )}
+	                    <LucideIcon name={item.icon} className="w-5 h-5" />
+	                    <span className={`text-[11px] leading-tight ${activeTab === item.key ? "font-semibold" : "font-medium"}`}>{item.label}</span>
+	                  </button>
+	                ))}
               </div>
             </div>
 
